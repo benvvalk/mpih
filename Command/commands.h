@@ -2,6 +2,7 @@
 #define _COMMANDS_H_
 
 #include "Command/help.h"
+#include "Command/init.h"
 #include "Command/version.h"
 #include "Macro/Array.h"
 #include "IO/IOUtil.h"
@@ -17,6 +18,7 @@ static struct cmd_struct cmd_map[] = {
 	{ "help", &cmd_help },
 	{ "--help", &cmd_help },
 	{ "-h", &cmd_help },
+	{ "init", &cmd_init },
 	{ "--version", &cmd_version },
 	{ "version", &cmd_version }
 };
