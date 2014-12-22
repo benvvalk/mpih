@@ -2,6 +2,7 @@
 #define _COMMANDS_H_
 
 #include "Command/help.h"
+#include "Command/version.h"
 #include "Macro/Array.h"
 #include "IO/IOUtil.h"
 #include <iostream>
@@ -16,6 +17,8 @@ static struct cmd_struct cmd_map[] = {
 	{ "help", &cmd_help },
 	{ "--help", &cmd_help },
 	{ "-h", &cmd_help },
+	{ "--version", &cmd_version },
+	{ "version", &cmd_version }
 };
 
 int invoke_cmd(const char* cmd, int argc, char** argv)
