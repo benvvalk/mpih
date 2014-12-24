@@ -3,6 +3,7 @@
 
 #include "Command/help.h"
 #include "Command/init.h"
+#include "Command/rank.h"
 #include "Command/version.h"
 #include "Macro/Array.h"
 #include "IO/IOUtil.h"
@@ -19,6 +20,7 @@ static struct cmd_struct cmd_map[] = {
 	{ "--help", &cmd_help },
 	{ "-h", &cmd_help },
 	{ "init", &cmd_init },
+	{ "rank", &cmd_rank },
 	{ "--version", &cmd_version },
 	{ "version", &cmd_version }
 };
