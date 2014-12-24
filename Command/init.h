@@ -56,7 +56,7 @@ void commandHandler(const char* cmd, int socket_fd, char* dataHead,
 
 int serverLoop(const char* socketPath)
 {
-	int s = listenOnUnixSocket(socketPath);
+	int s = UnixSocket::listen(socketPath);
 
 	for(;;) {
 

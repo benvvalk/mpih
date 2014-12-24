@@ -54,7 +54,7 @@ int cmd_rank(int argc, char** argv)
 		die(RANK_USAGE_MESSAGE);
 
 	std::cout << "Trying to connect..." << std::endl;
-	int socket = connectToUnixSocket(argv[optind]);
+	int socket = UnixSocket::connect(argv[optind]);
 
 	// send "RANK" command
 	const char* RANK_CMD = "RANK\n";
