@@ -8,6 +8,8 @@
 #include <getopt.h>
 #include <iostream>
 #include <sstream>
+#include <cassert>
+#include <algorithm>
 
 static const char INIT_USAGE_MESSAGE[] =
 "Usage: mpi init <socket_path>\n"
@@ -54,57 +56,163 @@ void commandHandler(const char* cmd, int socket_fd, char* dataHead,
 		perror("recv");
 }
 
+#define CMD_BUFFER_SIZE 1024
+#define SEND_BUFFER_SIZE 16384
+#define SEND_CMD "SEND"
+
+enum ConnectionState {
+	READING_COMMAND=0,
+	RECEIVING_DATA,
+	SENDING_DATA,
+	CLOSED
+};
+
+struct Connection {
+
+	int socket_fd;
+	ConnectionState state;
+
+	char* cmdBuffer;
+	char* cmdBufferPos;
+	char* cmdBufferEnd;
+
+	char* sendBuffer;
+	char* sendBufferPos;
+	char* sendBufferEnd;
+
+	Connection(int listeningSocket) :
+		socket_fd(-1),
+		state(CLOSED),
+		cmdBuffer(NULL),
+		cmdBufferPos(NULL),
+		cmdBufferEnd(NULL),
+		sendBuffer(NULL),
+		sendBufferPos(NULL),
+		sendBufferEnd(NULL)
+	{
+		socket_fd = UnixSocket::accept(listeningSocket);
+		setState(READING_COMMAND);
+		initCmdBuffer();
+	}
+
+	~Connection()
+	{
+		if (cmdBuffer != NULL)
+			free(cmdBuffer);
+		if (sendBuffer != NULL)
+			free(sendBuffer);
+	}
+
+	ConnectionState getState() {
+		return state;
+	}
+
+	void setState(ConnectionState state) {
+		this->state = state;
+	}
+
+	void initCmdBuffer()
+	{
+		if (cmdBuffer == NULL)
+			cmdBuffer = (char*)malloc(CMD_BUFFER_SIZE);
+		cmdBufferPos = cmdBuffer;
+		cmdBufferEnd = cmdBuffer + CMD_BUFFER_SIZE;
+	}
+
+	void initSendBuffer()
+	{
+		if (sendBuffer == NULL)
+			sendBuffer = (char*)malloc(SEND_BUFFER_SIZE);
+		sendBufferPos = sendBuffer;
+		sendBufferEnd = sendBuffer + SEND_BUFFER_SIZE;
+	}
+
+	void close()
+	{
+		if (socket_fd >= 0)
+			::close(socket_fd);
+		socket_fd = -1;
+		setState(CLOSED);
+	}
+
+	bool recv()
+	{
+		assert(getState() == READING_COMMAND);
+
+		// first line from client exceed max length
+		if (cmdBufferPos >= cmdBufferEnd) {
+			std::cerr << "Client request exceeded max length for "
+				<< "command line" << std::endl;
+			close();
+			return false;
+		}
+
+		int n = ::recv(socket_fd, cmdBufferPos,
+			cmdBufferEnd - cmdBufferPos, 0);
+
+		// error occurred during recv()
+		if (n < 0) {
+			perror("recv");
+			close();
+			return false;
+		}
+
+		cmdBufferPos += n;
+
+		// client finished sending data cleanly
+		if (n == 0 && cmdBufferPos == cmdBuffer) {
+			close();
+			return true;
+		}
+
+		// find newline that marks end of first line
+		char* newLine = (char *)memchr(cmdBuffer,
+			'\n', cmdBufferPos - cmdBuffer);
+
+		// newline missing after command
+		if (n == 0 && newLine == NULL) {
+			std::cerr << "Missing newline after command line" << std::endl;
+			close();
+			return false;
+		}
+
+		// we read a command
+		if (newLine != NULL) {
+			*newLine = '\0';
+			std::cout << "Received command: " << cmdBuffer << std::endl;
+			std::string command(cmdBuffer);
+			char* remainder = newLine + 1;
+			if (command == SEND_CMD) {
+				initSendBuffer();
+				memcpy(sendBuffer, remainder, cmdBufferPos - remainder);
+				cmdBufferPos = cmdBuffer;
+				setState(SENDING_DATA);
+			} else {
+				memmove(cmdBuffer, remainder, cmdBufferPos - remainder);
+				cmdBufferPos = cmdBuffer + (cmdBufferPos - remainder);
+				setState(READING_COMMAND);
+			}
+		}
+
+		return true;
+	}
+
+};
+
 int serverLoop(const char* socketPath)
 {
+	std::vector<Connection> connections;
+
 	int s = UnixSocket::listen(socketPath);
 
 	for(;;) {
 
-		const size_t BUFFER_SIZE = 1024;
-		char buffer[BUFFER_SIZE+1];
-		char* bufferPos = &buffer[0];
-		const char* bufferEnd = &buffer[0] + BUFFER_SIZE;
-
-		int done, n;
 		std::cout << "Waiting for a connection...\n";
-		int s2;
-		struct sockaddr_un remote;
-		socklen_t t = sizeof(remote);
-		if ((s2 = accept(s, (struct sockaddr *)&remote, &t)) == -1) {
-			perror("accept");
-			exit(1);
-		}
 
-		std::cout << "Connected.\n";
-		done = 0;
-		memset(&buffer[0], 0, BUFFER_SIZE+1);
-		do {
+		Connection connection(s);
+		while(connection.getState() == READING_COMMAND)
+			connection.recv();
 
-			n = recv(s2, bufferPos, bufferEnd - bufferPos, 0);
-			bufferPos += n;
-
-			char* data = &buffer[0];
-			if (n > 0) {
-				char* cmd = strsep(&data, "\n");
-				if (data != NULL) {
-					std::cout << "Received command: " << cmd
-						<< std::endl;
-					commandHandler(cmd, s2, data, bufferPos - data);
-					done = 1;
-				} else if (bufferPos >= bufferEnd) {
-					std::cerr << "Client request exceeded max length for "
-						<< "header line: " << buffer << std::endl;
-					done = 1;
-				}
-			} else {
-				if (n < 0)
-					perror("recv");
-				done = 1;
-			}
-
-		} while (!done);
-
-		close(s2);
 	}
 
 	return 0;
