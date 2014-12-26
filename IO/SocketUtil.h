@@ -3,24 +3,28 @@
 
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <event2/event.h>
 
 namespace UnixSocket
 {
-	static inline int open()
+	static inline int open(bool blocking = true)
 	{
 		int s;
 		if ((s = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
 			perror("socket");
 			exit(EXIT_FAILURE);
 		}
+		if (!blocking)
+			evutil_make_socket_nonblocking(s);
 		return s;
 	}
 
-	static inline int listen(const char* socketPath)
+	static inline int listen(const char* socketPath,
+		bool blocking = true)
 	{
-		const int MAX_CONNECTIONS = 5;
+		const int MAX_CONNECTIONS = 16;
 
-		int s = open();
+		int s = open(blocking);
 
 		struct sockaddr_un local;
 		local.sun_family = AF_UNIX;
@@ -41,9 +45,10 @@ namespace UnixSocket
 		return s;
 	}
 
-	static inline int connect(const char* socketPath)
+	static inline int connect(const char* socketPath,
+		bool blocking = true)
 	{
-		int s = open();
+		int s = open(blocking);
 
 		struct sockaddr_un remote;
 		remote.sun_family = AF_UNIX;
@@ -58,7 +63,7 @@ namespace UnixSocket
 		return s;
 	}
 
-	static inline int accept(int socket_fd)
+	static inline int accept(int socket_fd, bool blocking = true)
 	{
 		int s;
 		struct sockaddr_un remote;
@@ -68,6 +73,8 @@ namespace UnixSocket
 			perror("accept");
 			exit(EXIT_FAILURE);
 		}
+		if (!blocking)
+			evutil_make_socket_nonblocking(s);
 		return s;
 	}
 }

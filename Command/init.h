@@ -104,64 +104,32 @@ void
 do_accept(evutil_socket_t listener, short event, void *arg)
 {
 	struct event_base *base = (event_base*)arg;
-	struct sockaddr_storage ss;
-	socklen_t slen = sizeof(ss);
-	int fd = accept(listener, (struct sockaddr*)&ss, &slen);
-	if (fd < 0) {
-		perror("accept");
-	} else if (fd > FD_SETSIZE) {
-		close(fd);
-	} else {
-		struct bufferevent *bev;
 
-		ConnectionState* state = (ConnectionState *)
-			malloc(sizeof(ConnectionState));
-		*state = READING_COMMAND;
+	evutil_socket_t fd = UnixSocket::accept(listener, false);
 
-		evutil_make_socket_nonblocking(fd);
-		bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
-		bufferevent_setcb(bev, readcb, NULL, errorcb, state);
-		bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
-		bufferevent_enable(bev, EV_READ|EV_WRITE);
-	}
+	ConnectionState* state = (ConnectionState *)
+		malloc(sizeof(ConnectionState));
+	*state = READING_COMMAND;
+
+	struct bufferevent* bev = bufferevent_socket_new(base,
+		fd, BEV_OPT_CLOSE_ON_FREE);
+	bufferevent_setcb(bev, readcb, NULL, errorcb, state);
+	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 
 void serverLoop(const char* socketPath)
 {
-	evutil_socket_t listener;
-	struct sockaddr_un local;
-	struct event_base *base;
-	struct event *listener_event;
+	evutil_socket_t listener = UnixSocket::listen(socketPath, false);
 
-	base = event_base_new();
-	if (!base)
-		return; /*XXXerr*/
+	struct event_base* base = event_base_new();
+	assert(base);
 
-	listener = socket(AF_UNIX, SOCK_STREAM, 0);
-	assert(listener > 0);
+	struct event* listener_event = event_new(base, listener,
+		EV_READ|EV_PERSIST, do_accept, (void*)base);
 
-	evutil_make_socket_nonblocking(listener);
-
-	local.sun_family = AF_UNIX;
-	strcpy(local.sun_path, socketPath);
-	unlink(local.sun_path);
-	int len = strlen(local.sun_path) + sizeof(local.sun_family);
-
-	if (bind(listener, (struct sockaddr*)&local, len) < 0) {
-		perror("bind");
-		return;
-	}
-
-	if (listen(listener, 16)<0) {
-		perror("listen");
-		return;
-	}
-
-	listener_event = event_new(base, listener, EV_READ|EV_PERSIST,
-			do_accept, (void*)base);
-
-	/*XXX check it */
-	event_add(listener_event, NULL);
+	int result = event_add(listener_event, NULL);
+	assert(result == 0);
 
 	event_base_dispatch(base);
 }
