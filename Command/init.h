@@ -70,7 +70,7 @@ close_connection(struct bufferevent* bev,
 }
 
 static inline void
-do_command(const char* line, struct bufferevent *bev)
+process_header(const char* line, struct bufferevent *bev)
 {
 	printf("Received command: '%s'\n", line);
 
@@ -86,7 +86,7 @@ do_command(const char* line, struct bufferevent *bev)
 }
 
 static inline void
-on_read(struct bufferevent *bev, void *arg)
+init_read_handler(struct bufferevent *bev, void *arg)
 {
 	ConnectionState* state = (ConnectionState*)arg;
 	assert(state != NULL);
@@ -100,7 +100,7 @@ on_read(struct bufferevent *bev, void *arg)
 		size_t origLen = evbuffer_get_length(input);
 		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
 		if (line != NULL) {
-			do_command(line, bev);
+			process_header(line, bev);
 		} else if (origLen >= MAX_HEADER_SIZE) {
 			fprintf(stderr, "header line exceeded max length "
 				"(%d bytes)\n", MAX_HEADER_SIZE);
@@ -111,7 +111,7 @@ on_read(struct bufferevent *bev, void *arg)
 }
 
 static inline void
-on_error(struct bufferevent *bev, short error, void *arg)
+init_event_handler(struct bufferevent *bev, short error, void *arg)
 {
 	ConnectionState* state = (ConnectionState*)arg;
 
@@ -128,7 +128,7 @@ on_error(struct bufferevent *bev, short error, void *arg)
 }
 
 static inline void
-on_accept(evutil_socket_t listener, short event, void *arg)
+init_accept_handler(evutil_socket_t listener, short event, void *arg)
 {
 	struct event_base *base = (event_base*)arg;
 
@@ -144,7 +144,8 @@ on_accept(evutil_socket_t listener, short event, void *arg)
 		fd, BEV_OPT_CLOSE_ON_FREE);
 
 	// set callbacks for buffer input/output
-	bufferevent_setcb(bev, on_read, NULL, on_error, state);
+	bufferevent_setcb(bev, init_read_handler, NULL,
+		init_event_handler, state);
 	// set low/high watermarks for invoking callbacks
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
 	// enable callbacks
@@ -159,7 +160,7 @@ static inline void serverLoop(const char* socketPath)
 	assert(base);
 
 	struct event* listener_event = event_new(base, listener,
-		EV_READ|EV_PERSIST, on_accept, (void*)base);
+		EV_READ|EV_PERSIST, init_accept_handler, (void*)base);
 
 	int result = event_add(listener_event, NULL);
 	assert(result == 0);
