@@ -48,24 +48,32 @@ static const struct option init_longopts[] = {
 	{ NULL, 0, NULL, 0 }
 };
 
-enum ConnectionState {
+enum ConnectionMode {
 	READING_COMMAND=0,
 	RECEIVING_DATA,
 	SENDING_DATA,
 	CLOSED
 };
 
+#define MPI_BUFFER_SIZE 65536
+
+struct ConnectionState {
+	ConnectionMode mode;
+	char* mpi_buffer;
+};
+
 #define MAX_READ_SIZE 16384
 #define MAX_HEADER_SIZE 256
-
-#define CMD_RANK "RANK"
 
 static inline void
 close_connection(struct bufferevent* bev,
 	ConnectionState* state)
 {
-	if (state != NULL)
+	if (state != NULL) {
+		if (state->mpi_buffer != NULL)
+			free(state->mpi_buffer);
 		free(state);
+	}
 	bufferevent_free(bev);
 }
 
@@ -74,7 +82,7 @@ process_header(const char* line, struct bufferevent *bev)
 {
 	printf("Received command: '%s'\n", line);
 
-	if (strcmp(line, CMD_RANK) == 0) {
+	if (strcmp(line, "RANK") == 0) {
 		assert(bev != NULL);
 		struct evbuffer* output = bufferevent_get_output(bev);
 		assert(output != NULL);
@@ -95,7 +103,7 @@ init_read_handler(struct bufferevent *bev, void *arg)
 	input = bufferevent_get_input(bev);
 	output = bufferevent_get_output(bev);
 
-	if (*state == READING_COMMAND) {
+	if (state->mode == READING_COMMAND) {
 		size_t n;
 		size_t origLen = evbuffer_get_length(input);
 		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
@@ -138,7 +146,8 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 
 	ConnectionState* state = (ConnectionState *)
 		malloc(sizeof(ConnectionState));
-	*state = READING_COMMAND;
+	state->mode = READING_COMMAND;
+	state->mpi_buffer = NULL;
 
 	struct bufferevent* bev = bufferevent_socket_new(base,
 		fd, BEV_OPT_CLOSE_ON_FREE);
