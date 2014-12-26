@@ -62,7 +62,7 @@ void do_command(const char* line, struct bufferevent *bev)
 	printf("Received command: '%s'\n", line);
 }
 
-void readcb(struct bufferevent *bev, void *arg)
+void on_read(struct bufferevent *bev, void *arg)
 {
 	ConnectionState state = *(ConnectionState*)arg;
 	struct evbuffer *input, *output;
@@ -85,27 +85,32 @@ void readcb(struct bufferevent *bev, void *arg)
 }
 
 void
-errorcb(struct bufferevent *bev, short error, void *ctx)
+on_error(struct bufferevent *bev, short error, void *arg)
 {
+	ConnectionState* state = (ConnectionState*)arg;
+
+	// we should never see this
+	assert(!(error & BEV_EVENT_TIMEOUT));
+
 	if (error & BEV_EVENT_EOF) {
-		/* connection has been closed, do any clean up here */
-		/* ... */
+		// connection closed
 	} else if (error & BEV_EVENT_ERROR) {
-		/* check errno to see what error occurred */
-		/* ... */
-	} else if (error & BEV_EVENT_TIMEOUT) {
-		/* must be a timeout event handle, handle it */
-		/* ... */
+		perror("libevent");
 	}
+
+	assert(state != NULL);
+	free(state);
 	bufferevent_free(bev);
 }
 
 void
-do_accept(evutil_socket_t listener, short event, void *arg)
+on_accept(evutil_socket_t listener, short event, void *arg)
 {
 	struct event_base *base = (event_base*)arg;
 
 	evutil_socket_t fd = UnixSocket::accept(listener, false);
+
+	printf("Connected to client.\n");
 
 	ConnectionState* state = (ConnectionState *)
 		malloc(sizeof(ConnectionState));
@@ -113,8 +118,12 @@ do_accept(evutil_socket_t listener, short event, void *arg)
 
 	struct bufferevent* bev = bufferevent_socket_new(base,
 		fd, BEV_OPT_CLOSE_ON_FREE);
-	bufferevent_setcb(bev, readcb, NULL, errorcb, state);
+
+	// set callbacks for buffer input/output
+	bufferevent_setcb(bev, on_read, NULL, on_error, state);
+	// set low/high watermarks for invoking callbacks
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
+	// enable callbacks
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 
@@ -126,10 +135,12 @@ void serverLoop(const char* socketPath)
 	assert(base);
 
 	struct event* listener_event = event_new(base, listener,
-		EV_READ|EV_PERSIST, do_accept, (void*)base);
+		EV_READ|EV_PERSIST, on_accept, (void*)base);
 
 	int result = event_add(listener_event, NULL);
 	assert(result == 0);
+
+	printf("Waiting for connection...\n");
 
 	event_base_dispatch(base);
 }
