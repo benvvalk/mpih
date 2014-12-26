@@ -1,6 +1,10 @@
 #ifndef _INIT_H_
 #define _INIT_H_
 
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
@@ -44,22 +48,6 @@ static const struct option init_longopts[] = {
 	{ NULL, 0, NULL, 0 }
 };
 
-void commandHandler(const char* cmd, int socket_fd, char* dataHead,
-	size_t dataHeadLen)
-{
-	const size_t BUFFER_SIZE = 16384;
-	char buffer[BUFFER_SIZE];
-	int n = 1;
-	while (n > 0)
-		n = recv(socket_fd, &buffer, BUFFER_SIZE, 0);
-	if (n < 0)
-		perror("recv");
-}
-
-#define CMD_BUFFER_SIZE 1024
-#define SEND_BUFFER_SIZE 16384
-#define SEND_CMD "SEND"
-
 enum ConnectionState {
 	READING_COMMAND=0,
 	RECEIVING_DATA,
@@ -67,155 +55,115 @@ enum ConnectionState {
 	CLOSED
 };
 
-struct Connection {
+#define MAX_READ_SIZE 16384
 
-	int socket_fd;
-	ConnectionState state;
-
-	char* cmdBuffer;
-	char* cmdBufferPos;
-	char* cmdBufferEnd;
-
-	char* sendBuffer;
-	char* sendBufferPos;
-	char* sendBufferEnd;
-
-	Connection(int listeningSocket) :
-		socket_fd(-1),
-		state(CLOSED),
-		cmdBuffer(NULL),
-		cmdBufferPos(NULL),
-		cmdBufferEnd(NULL),
-		sendBuffer(NULL),
-		sendBufferPos(NULL),
-		sendBufferEnd(NULL)
-	{
-		socket_fd = UnixSocket::accept(listeningSocket);
-		setState(READING_COMMAND);
-		initCmdBuffer();
-	}
-
-	~Connection()
-	{
-		if (cmdBuffer != NULL)
-			free(cmdBuffer);
-		if (sendBuffer != NULL)
-			free(sendBuffer);
-	}
-
-	ConnectionState getState() {
-		return state;
-	}
-
-	void setState(ConnectionState state) {
-		this->state = state;
-	}
-
-	void initCmdBuffer()
-	{
-		if (cmdBuffer == NULL)
-			cmdBuffer = (char*)malloc(CMD_BUFFER_SIZE);
-		cmdBufferPos = cmdBuffer;
-		cmdBufferEnd = cmdBuffer + CMD_BUFFER_SIZE;
-	}
-
-	void initSendBuffer()
-	{
-		if (sendBuffer == NULL)
-			sendBuffer = (char*)malloc(SEND_BUFFER_SIZE);
-		sendBufferPos = sendBuffer;
-		sendBufferEnd = sendBuffer + SEND_BUFFER_SIZE;
-	}
-
-	void close()
-	{
-		if (socket_fd >= 0)
-			::close(socket_fd);
-		socket_fd = -1;
-		setState(CLOSED);
-	}
-
-	bool recv()
-	{
-		assert(getState() == READING_COMMAND);
-
-		// first line from client exceed max length
-		if (cmdBufferPos >= cmdBufferEnd) {
-			std::cerr << "Client request exceeded max length for "
-				<< "command line" << std::endl;
-			close();
-			return false;
-		}
-
-		int n = ::recv(socket_fd, cmdBufferPos,
-			cmdBufferEnd - cmdBufferPos, 0);
-
-		// error occurred during recv()
-		if (n < 0) {
-			perror("recv");
-			close();
-			return false;
-		}
-
-		cmdBufferPos += n;
-
-		// client finished sending data cleanly
-		if (n == 0 && cmdBufferPos == cmdBuffer) {
-			close();
-			return true;
-		}
-
-		// find newline that marks end of first line
-		char* newLine = (char *)memchr(cmdBuffer,
-			'\n', cmdBufferPos - cmdBuffer);
-
-		// newline missing after command
-		if (n == 0 && newLine == NULL) {
-			std::cerr << "Missing newline after command line" << std::endl;
-			close();
-			return false;
-		}
-
-		// we read a command
-		if (newLine != NULL) {
-			*newLine = '\0';
-			std::cout << "Received command: " << cmdBuffer << std::endl;
-			std::string command(cmdBuffer);
-			char* remainder = newLine + 1;
-			if (command == SEND_CMD) {
-				initSendBuffer();
-				memcpy(sendBuffer, remainder, cmdBufferPos - remainder);
-				cmdBufferPos = cmdBuffer;
-				setState(SENDING_DATA);
-			} else {
-				memmove(cmdBuffer, remainder, cmdBufferPos - remainder);
-				cmdBufferPos = cmdBuffer + (cmdBufferPos - remainder);
-				setState(READING_COMMAND);
-			}
-		}
-
-		return true;
-	}
-
-};
-
-int serverLoop(const char* socketPath)
+void do_command(const char* line, struct bufferevent *bev)
 {
-	std::vector<Connection> connections;
+	printf("Received command: '%s'\n", line);
+}
 
-	int s = UnixSocket::listen(socketPath);
+void readcb(struct bufferevent *bev, void *arg)
+{
+	ConnectionState state = *(ConnectionState*)arg;
+	struct evbuffer *input, *output;
+	input = bufferevent_get_input(bev);
+	output = bufferevent_get_output(bev);
 
-	for(;;) {
+	if (state == READING_COMMAND) {
+		size_t n;
+		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
+		if (line != NULL) {
+			do_command(line, bev);
+			free(line);
+		} else if (evbuffer_get_length(input) >= MAX_READ_SIZE) {
+			fprintf(stderr, "client command exceeded max length\n");
+			free(arg);
+			bufferevent_free(bev);
+			exit(EXIT_FAILURE);
+		}
+	}
+}
 
-		std::cout << "Waiting for a connection...\n";
+void
+errorcb(struct bufferevent *bev, short error, void *ctx)
+{
+	if (error & BEV_EVENT_EOF) {
+		/* connection has been closed, do any clean up here */
+		/* ... */
+	} else if (error & BEV_EVENT_ERROR) {
+		/* check errno to see what error occurred */
+		/* ... */
+	} else if (error & BEV_EVENT_TIMEOUT) {
+		/* must be a timeout event handle, handle it */
+		/* ... */
+	}
+	bufferevent_free(bev);
+}
 
-		Connection connection(s);
-		while(connection.getState() == READING_COMMAND)
-			connection.recv();
+void
+do_accept(evutil_socket_t listener, short event, void *arg)
+{
+	struct event_base *base = (event_base*)arg;
+	struct sockaddr_storage ss;
+	socklen_t slen = sizeof(ss);
+	int fd = accept(listener, (struct sockaddr*)&ss, &slen);
+	if (fd < 0) {
+		perror("accept");
+	} else if (fd > FD_SETSIZE) {
+		close(fd);
+	} else {
+		struct bufferevent *bev;
 
+		ConnectionState* state = (ConnectionState *)
+			malloc(sizeof(ConnectionState));
+		*state = READING_COMMAND;
+
+		evutil_make_socket_nonblocking(fd);
+		bev = bufferevent_socket_new(base, fd, BEV_OPT_CLOSE_ON_FREE);
+		bufferevent_setcb(bev, readcb, NULL, errorcb, state);
+		bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
+		bufferevent_enable(bev, EV_READ|EV_WRITE);
+	}
+}
+
+void serverLoop(const char* socketPath)
+{
+	evutil_socket_t listener;
+	struct sockaddr_un local;
+	struct event_base *base;
+	struct event *listener_event;
+
+	base = event_base_new();
+	if (!base)
+		return; /*XXXerr*/
+
+	listener = socket(AF_UNIX, SOCK_STREAM, 0);
+	assert(listener > 0);
+
+	evutil_make_socket_nonblocking(listener);
+
+	local.sun_family = AF_UNIX;
+	strcpy(local.sun_path, socketPath);
+	unlink(local.sun_path);
+	int len = strlen(local.sun_path) + sizeof(local.sun_family);
+
+	if (bind(listener, (struct sockaddr*)&local, len) < 0) {
+		perror("bind");
+		return;
 	}
 
-	return 0;
+	if (listen(listener, 16)<0) {
+		perror("listen");
+		return;
+	}
+
+	listener_event = event_new(base, listener, EV_READ|EV_PERSIST,
+			do_accept, (void*)base);
+
+	/*XXX check it */
+	event_add(listener_event, NULL);
+
+	event_base_dispatch(base);
 }
 
 int cmd_init(int argc, char** argv)
@@ -243,6 +191,10 @@ int cmd_init(int argc, char** argv)
 	// make sure a socket path is given (and nothing else)
 	if (argc - optind != 1)
 		die(INIT_USAGE_MESSAGE);
+
+	// turn off buffering on stdout/stderr
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
 
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &mpi::numProc);

@@ -8,12 +8,20 @@ project (mpiglue)
 set (MPIGLUE_VERSION 0.1)
 
 #------------------------------------------------------------
-# MPI dependency
+# dependencies
 #------------------------------------------------------------
+
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake/Modules/")
+
+# MPI
 
 find_package(MPI REQUIRED)
 SET(CMAKE_C_COMPILER mpicc)
 SET(CMAKE_CXX_COMPILER mpicxx)
+
+# libevent
+
+find_package(Event)
 
 #------------------------------------------------------------
 # compiler settings
@@ -24,7 +32,9 @@ set(CMAKE_BUILD_TYPE Debug CACHE STRING "Choose the type of build." FORCE)
 include_directories(
 	"${PROJECT_SOURCE_DIR}"
 	"${PROJECT_BINARY_DIR}"
-	SYSTEM "${MPI_INCLUDE_PATH}"
+	SYSTEM
+		"${MPI_INCLUDE_PATH}"
+		"${EVENT_INCLUDE_DIR}"
 )
 
 #------------------------------------------------------------
@@ -41,7 +51,7 @@ configure_file(
 #------------------------------------------------------------
 
 add_executable (mpi mpi.cc)
-target_link_libraries(mpi "${MPI_C_LIBRARIES}")
+target_link_libraries(mpi "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
 
 #------------------------------------------------------------
 # install targets

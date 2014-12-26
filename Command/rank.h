@@ -57,8 +57,8 @@ int cmd_rank(int argc, char** argv)
 	int socket = UnixSocket::connect(argv[optind]);
 
 	// send "RANK" command
-	const char* RANK_CMD = "RANK\n";
-	if (send(socket, RANK_CMD, strlen(RANK_CMD), 0) == -1) {
+	const char* cmd = "RANK\n";
+	if (send(socket, cmd, strlen(cmd), 0) == -1) {
 		perror("send");
 		exit(EXIT_FAILURE);
 	}
