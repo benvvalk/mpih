@@ -56,10 +56,12 @@ enum ConnectionState {
 };
 
 #define MAX_READ_SIZE 16384
+#define MAX_HEADER_SIZE 256
 
 #define CMD_RANK "RANK"
 
-void close_connection(struct bufferevent* bev,
+static inline void
+close_connection(struct bufferevent* bev,
 	ConnectionState* state)
 {
 	if (state != NULL)
@@ -67,7 +69,8 @@ void close_connection(struct bufferevent* bev,
 	bufferevent_free(bev);
 }
 
-void do_command(const char* line, struct bufferevent *bev)
+static inline void
+do_command(const char* line, struct bufferevent *bev)
 {
 	printf("Received command: '%s'\n", line);
 
@@ -82,7 +85,8 @@ void do_command(const char* line, struct bufferevent *bev)
 	}
 }
 
-void on_read(struct bufferevent *bev, void *arg)
+static inline void
+on_read(struct bufferevent *bev, void *arg)
 {
 	ConnectionState* state = (ConnectionState*)arg;
 	assert(state != NULL);
@@ -93,20 +97,20 @@ void on_read(struct bufferevent *bev, void *arg)
 
 	if (*state == READING_COMMAND) {
 		size_t n;
+		size_t origLen = evbuffer_get_length(input);
 		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
 		if (line != NULL) {
 			do_command(line, bev);
-			free(line);
-		} else if (evbuffer_get_length(input) >= MAX_READ_SIZE) {
-			fprintf(stderr, "client command exceeded max length\n");
-			free(arg);
-			bufferevent_free(bev);
-			exit(EXIT_FAILURE);
+		} else if (origLen >= MAX_HEADER_SIZE) {
+			fprintf(stderr, "header line exceeded max length "
+				"(%d bytes)\n", MAX_HEADER_SIZE);
+			close_connection(bev, state);
 		}
+		free(line);
 	}
 }
 
-void
+static inline void
 on_error(struct bufferevent *bev, short error, void *arg)
 {
 	ConnectionState* state = (ConnectionState*)arg;
@@ -123,7 +127,7 @@ on_error(struct bufferevent *bev, short error, void *arg)
 	close_connection(bev, state);
 }
 
-void
+static inline void
 on_accept(evutil_socket_t listener, short event, void *arg)
 {
 	struct event_base *base = (event_base*)arg;
@@ -147,7 +151,7 @@ on_accept(evutil_socket_t listener, short event, void *arg)
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 }
 
-void serverLoop(const char* socketPath)
+static inline void serverLoop(const char* socketPath)
 {
 	evutil_socket_t listener = UnixSocket::listen(socketPath, false);
 
@@ -165,7 +169,7 @@ void serverLoop(const char* socketPath)
 	event_base_dispatch(base);
 }
 
-int cmd_init(int argc, char** argv)
+static inline int cmd_init(int argc, char** argv)
 {
 	for (int c; (c = getopt_long(argc, argv,
 		init_shortopts, init_longopts, NULL)) != -1;) {

@@ -7,6 +7,9 @@
 #include <getopt.h>
 #include <iostream>
 #include <sstream>
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
 
 static const char RANK_USAGE_MESSAGE[] =
 "Usage: mpi rank <socket_path>\n"
@@ -26,6 +29,44 @@ static const struct option rank_longopts[] = {
 	{ "verbose",  no_argument, NULL, 'v' },
 	{ NULL, 0, NULL, 0 }
 };
+
+static inline void
+rank_read_handler(struct bufferevent *bev, void *arg)
+{
+	const int MAX_LINE_SIZE = 256;
+
+	struct event_base *base = (event_base*)arg;
+	struct evbuffer* input = bufferevent_get_input(bev);
+
+	size_t origLen = evbuffer_get_length(input);
+	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
+
+	if (line != NULL) {
+		puts(line);
+		event_base_loopexit(base, NULL);
+	} else if (origLen >= MAX_LINE_SIZE) {
+		fprintf(stderr, "response line exceeded max length "
+				"(%d bytes)\n", MAX_LINE_SIZE);
+		bufferevent_free(bev);
+	}
+
+	free(line);
+}
+
+static inline void
+rank_event_handler(struct bufferevent *bev, short error, void *arg)
+{
+	// we should never see this
+	assert(!(error & BEV_EVENT_TIMEOUT));
+
+	if (error & BEV_EVENT_EOF) {
+		// connection closed
+	} else if (error & BEV_EVENT_ERROR) {
+		perror("libevent");
+	}
+
+	bufferevent_free(bev);
+}
 
 int cmd_rank(int argc, char** argv)
 {
@@ -53,17 +94,34 @@ int cmd_rank(int argc, char** argv)
 	if (argc - optind != 1)
 		die(RANK_USAGE_MESSAGE);
 
-	std::cout << "Trying to connect..." << std::endl;
+	if (opt::verbose)
+		std::cerr << "Connecting to 'mpih init' process..."
+			<< std::endl;
+
 	int socket = UnixSocket::connect(argv[optind]);
 
-	// send "RANK" command
-	const char* cmd = "RANK\n";
-	if (send(socket, cmd, strlen(cmd), 0) == -1) {
-		perror("send");
-		exit(EXIT_FAILURE);
-	}
+	if (opt::verbose)
+		std::cerr << "Connected." << std::endl;
 
-	close(socket);
+	struct event_base* base = event_base_new();
+	assert(base != NULL);
+
+	struct bufferevent* bev = bufferevent_socket_new(base,
+		socket, BEV_OPT_CLOSE_ON_FREE);
+	assert(bev != NULL);
+
+	bufferevent_setcb(bev, rank_read_handler, NULL,
+		rank_event_handler, (void*)base);
+	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+	// send command to 'mpi init' daemon
+	evbuffer_add_printf(bufferevent_get_output(bev), "RANK\n");
+
+	event_base_dispatch(base);
+	bufferevent_free(bev);
+	event_base_free(base);
+
 	return 0;
 }
 
