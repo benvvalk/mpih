@@ -57,19 +57,41 @@ enum ConnectionState {
 
 #define MAX_READ_SIZE 16384
 
+#define CMD_RANK "RANK"
+
+void close_connection(struct bufferevent* bev,
+	ConnectionState* state)
+{
+	if (state != NULL)
+		free(state);
+	bufferevent_free(bev);
+}
+
 void do_command(const char* line, struct bufferevent *bev)
 {
 	printf("Received command: '%s'\n", line);
+
+	if (strcmp(line, CMD_RANK) == 0) {
+		assert(bev != NULL);
+		struct evbuffer* output = bufferevent_get_output(bev);
+		assert(output != NULL);
+		evbuffer_add_printf(output, "%d\n", mpi::rank);
+	} else {
+		fprintf(stderr, "error: unrecognized command '%s'\n",
+			line);
+	}
 }
 
 void on_read(struct bufferevent *bev, void *arg)
 {
-	ConnectionState state = *(ConnectionState*)arg;
+	ConnectionState* state = (ConnectionState*)arg;
+	assert(state != NULL);
+
 	struct evbuffer *input, *output;
 	input = bufferevent_get_input(bev);
 	output = bufferevent_get_output(bev);
 
-	if (state == READING_COMMAND) {
+	if (*state == READING_COMMAND) {
 		size_t n;
 		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
 		if (line != NULL) {
@@ -98,9 +120,7 @@ on_error(struct bufferevent *bev, short error, void *arg)
 		perror("libevent");
 	}
 
-	assert(state != NULL);
-	free(state);
-	bufferevent_free(bev);
+	close_connection(bev, state);
 }
 
 void
