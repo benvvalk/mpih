@@ -168,7 +168,7 @@ static inline void serverLoop(const char* socketPath)
 	evutil_socket_t listener = UnixSocket::listen(socketPath, false);
 
 	struct event_base* base = event_base_new();
-	assert(base);
+	assert(base != NULL);
 
 	struct event* listener_event = event_new(base, listener,
 		EV_READ|EV_PERSIST, init_accept_handler, (void*)base);
@@ -179,6 +179,8 @@ static inline void serverLoop(const char* socketPath)
 	printf("Waiting for connection...\n");
 
 	event_base_dispatch(base);
+	event_free(listener_event);
+	event_base_free(base);
 }
 
 static inline int cmd_init(int argc, char** argv)
