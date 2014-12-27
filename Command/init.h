@@ -59,6 +59,7 @@ enum ConnectionMode {
 
 struct ConnectionState {
 	ConnectionMode mode;
+	size_t mpi_buffer_len;
 	char* mpi_buffer;
 };
 
@@ -148,6 +149,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 		malloc(sizeof(ConnectionState));
 	state->mode = READING_COMMAND;
 	state->mpi_buffer = NULL;
+	state->mpi_buffer_len = 0;
 
 	struct bufferevent* bev = bufferevent_socket_new(base,
 		fd, BEV_OPT_CLOSE_ON_FREE);
