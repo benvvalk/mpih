@@ -92,11 +92,13 @@ struct ConnectionState {
 
 	void clear()
 	{
+		if (mpi_buffer != NULL)
+			free(mpi_buffer);
+
 		mode = READING_COMMAND;
 		rank = 0;
 		mpi_buffer_len = 0;
-		if (mpi_buffer != NULL)
-			free(mpi_buffer);
+		mpi_buffer = NULL;
 		size_msg_id = 0;
 		body_msg_id = 0;
 	}
@@ -156,35 +158,191 @@ static inline void mpi_wait_all()
 	}
 }
 
-static inline void post_mpi_send(struct bufferevent* bev)
+static inline void create_timer_event(struct event_base* base,
+	void (*callback_func)(evutil_socket_t, short, void*),
+	void* callback_arg, unsigned seconds)
+{
+	assert(base != NULL);
+	assert(callback_func != NULL);
+	struct timeval time;
+	time.tv_sec = seconds;
+	time.tv_usec = 0;
+	struct event* ev = event_new(base, -1, 0,
+			callback_func, callback_arg);
+	event_add(ev, &time);
+}
+
+// forward declaration
+static inline void
+process_next_header(struct bufferevent *bev);
+// forward declaration
+static inline void post_mpi_recv_msg(struct bufferevent* bev);
+
+static inline void update_connection_status(
+	evutil_socket_t socket, short event, void* arg)
+{
+	const unsigned TIMER_SEC = 1;
+
+	struct bufferevent* bev = (bufferevent*)arg;
+	assert(bev != NULL);
+	struct event_base* base = bufferevent_get_base(bev);
+	assert(base != NULL);
+
+	ConnectionStateMap::iterator it =
+		g_connectionStates.find(socket);
+	assert(it != g_connectionStates.end());
+	ConnectionState& state = it->second;
+
+	int completed = 0;
+	if (state.mode == MPI_SENDING_MSG) {
+		MPI_Test(&state.size_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (completed && state.mpi_buffer_len > 0)
+			MPI_Test(&state.body_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (completed) {
+			process_next_header(bev);
+			return;
+		}
+	} else if (state.mode == MPI_RECVING_MSG_SIZE) {
+		MPI_Test(&state.size_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (completed) {
+			if (state.mpi_buffer_len > 0)
+				post_mpi_recv_msg(bev);
+			else
+				process_next_header(bev);
+			return;
+		}
+	} else if (state.mode == MPI_RECVING_MSG) {
+		MPI_Test(&state.body_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (completed) {
+			process_next_header(bev);
+			return;
+		}
+	}
+
+	// still waiting for current send/recv to complete;
+	// check again in TIMER_SEC
+	create_timer_event(base, update_connection_status,
+			(void*)bev, TIMER_SEC);
+}
+
+static inline void post_mpi_send(struct bufferevent* bev,
+	int rank, size_t size)
 {
 	assert(bev != NULL);
+
+	struct event_base* base = bufferevent_get_base(bev);
+	assert(base != NULL);
+
+	evutil_socket_t socket = bufferevent_getfd(bev);
+
 	ConnectionState& state = get_connection_state(bev);
-	assert(state.mode == MPI_READY_TO_SEND_MSG);
+	assert(state.mode == READING_COMMAND);
+
+	state.clear();
+	state.mode = MPI_SENDING_MSG;
+	state.rank = rank;
+	state.mpi_buffer_len = size;
+	state.mpi_buffer = (char*)malloc(size);
 
 	// send message size in advance of message body
 	MPI_Isend(&state.mpi_buffer_len, 1, MPI_UINT64_T,
 		state.rank, 0, MPI_COMM_WORLD,
 		&state.size_msg_id);
 
-	// send message body
-	assert(state.mpi_buffer != NULL);
-	MPI_Isend(state.mpi_buffer, state.mpi_buffer_len,
-		MPI_BYTE, state.rank, MPI_DEFAULT_TAG,
-		MPI_COMM_WORLD, &state.body_msg_id);
+	// send message body (a length of zero indicates EOF)
+	if (state.mpi_buffer_len > 0) {
+		assert(state.mpi_buffer != NULL);
+		MPI_Isend(state.mpi_buffer, state.mpi_buffer_len,
+				MPI_BYTE, state.rank, MPI_DEFAULT_TAG,
+				MPI_COMM_WORLD, &state.body_msg_id);
+	}
 
-	state.mode = MPI_SENDING_MSG;
+	update_connection_status(socket, 0, (void*)bev);
+}
+
+static inline void post_mpi_recv_size(struct bufferevent* bev,
+	int rank)
+{
+	assert(bev != NULL);
+
+	struct event_base* base = bufferevent_get_base(bev);
+	assert(base != NULL);
+
+	evutil_socket_t socket = bufferevent_getfd(bev);
+
+	ConnectionState& state = get_connection_state(bev);
+	assert(state.mode == READING_COMMAND);
+
+	state.clear();
+	state.mode = MPI_RECVING_MSG_SIZE;
+	state.rank = rank;
+
+	// send message size in advance of message body
+	MPI_Irecv(&state.mpi_buffer_len, 1, MPI_UINT64_T,
+		state.rank, 0, MPI_COMM_WORLD,
+		&state.size_msg_id);
+
+	update_connection_status(socket, 0, (void*)bev);
+}
+
+static inline void post_mpi_recv_msg(struct bufferevent* bev)
+{
+	assert(bev != NULL);
+
+	struct event_base* base = bufferevent_get_base(bev);
+	assert(base != NULL);
+
+	evutil_socket_t socket = bufferevent_getfd(bev);
+
+	ConnectionState& state = get_connection_state(bev);
+	assert(state.mode == MPI_RECVING_MSG_SIZE);
+
+	state.mode = MPI_RECVING_MSG;
+	state.mpi_buffer = (char*)malloc(state.mpi_buffer_len);
+
+	// send message body (a length of zero indicates EOF)
+	if (state.mpi_buffer_len > 0) {
+		assert(state.mpi_buffer != NULL);
+		MPI_Isend(state.mpi_buffer, state.mpi_buffer_len,
+				MPI_BYTE, state.rank, MPI_DEFAULT_TAG,
+				MPI_COMM_WORLD, &state.body_msg_id);
+		update_connection_status(socket, 0, (void*)bev);
+	}
+}
+
+static inline char* read_header(struct bufferevent* bev)
+{
+	struct evbuffer* input = bufferevent_get_input(bev);
+	assert(input != NULL);
+	size_t len = evbuffer_get_length(input);
+	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
+	if (line == NULL && len > MAX_HEADER_SIZE) {
+		fprintf(stderr, "header line exceeded max length "
+				"(%d bytes)\n", MAX_HEADER_SIZE);
+		close_connection(bev);
+	}
+	return line;
 }
 
 static inline void
-process_header(const char* line, struct bufferevent *bev)
+process_next_header(struct bufferevent *bev)
 {
 	assert(bev != NULL);
 	ConnectionState& state = get_connection_state(bev);
 
-	printf("Received command: '%s'\n", line);
+	state.clear();
+	state.mode = READING_COMMAND;
 
-	std::stringstream ss(line);
+	char* header = read_header(bev);
+
+	// haven't fully received header line yet
+	if (header == NULL)
+		return;
+
+	printf("Received header line: '%s'\n", header);
+
+	std::stringstream ss(header);
+	free(header);
 	std::string command;
 	ss >> command;
 
@@ -205,16 +363,23 @@ process_header(const char* line, struct bufferevent *bev)
 		size_t size;
 		ss >> rank;
 		ss >> size;
-
 		if (ss.fail() || !ss.eof()) {
 			fprintf(stderr, "malformed SEND header, "
 				"expected 'SEND <RANK> <BYTES>'\n");
 			return;
 		}
+		post_mpi_send(bev, rank, size);
 
-		state.clear();
-		state.mode = MPI_READY_TO_SEND_MSG;
-		post_mpi_send(bev);
+	} else if (command == "RECV") {
+
+		int rank;
+		ss >> rank;
+		if (ss.fail() || !ss.eof()) {
+			fprintf(stderr, "malformed RECV header, "
+				"expected 'RECV <RANK>'\n");
+			return;
+		}
+		post_mpi_recv_size(bev, rank);
 
 	} else {
 		fprintf(stderr, "error: unrecognized header '%s'\n",
@@ -228,24 +393,8 @@ init_read_handler(struct bufferevent *bev, void *arg)
 {
 	assert(bev != NULL);
 	ConnectionState& state = get_connection_state(bev);
-
-	struct evbuffer *input, *output;
-	input = bufferevent_get_input(bev);
-	output = bufferevent_get_output(bev);
-
-	if (state.mode == READING_COMMAND) {
-		size_t n;
-		size_t origLen = evbuffer_get_length(input);
-		char* line = evbuffer_readln(input, &n, EVBUFFER_EOL_LF);
-		if (line != NULL) {
-			process_header(line, bev);
-		} else if (origLen >= MAX_HEADER_SIZE) {
-			fprintf(stderr, "header line exceeded max length "
-				"(%d bytes)\n", MAX_HEADER_SIZE);
-			close_connection(bev);
-		}
-		free(line);
-	}
+	if (state.mode == READING_COMMAND)
+		process_next_header(bev);
 }
 
 static inline void
@@ -304,6 +453,7 @@ static inline void server_loop(const char* socketPath)
 	// register handler for new connections
 	struct event* listener_event = event_new(base, listener,
 		EV_READ|EV_PERSIST, init_accept_handler, (void*)base);
+	assert(listener_event != NULL);
 
 	int result = event_add(listener_event, NULL);
 	assert(result == 0);
