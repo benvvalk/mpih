@@ -172,10 +172,9 @@ static inline void create_timer_event(struct event_base* base,
 	event_add(ev, &time);
 }
 
-// forward declaration
+// forward declarations
 static inline void
 process_next_header(struct bufferevent *bev);
-// forward declaration
 static inline void post_mpi_recv_msg(struct bufferevent* bev);
 
 static inline void update_connection_status(
@@ -196,14 +195,29 @@ static inline void update_connection_status(
 	int completed = 0;
 	if (state.mode == MPI_SENDING_MSG) {
 		MPI_Test(&state.size_msg_id, &completed, MPI_STATUS_IGNORE);
-		if (completed && state.mpi_buffer_len > 0)
+		if (opt::verbose >= 3) {
+			printf("message size %lu to rank %d: %s\n",
+				state.mpi_buffer_len, state.rank,
+				completed ? "sent successfully" : "in flight");
+		}
+		if (completed && state.mpi_buffer_len > 0) {
 			MPI_Test(&state.body_msg_id, &completed, MPI_STATUS_IGNORE);
+			if (opt::verbose >= 3) {
+				printf("message to rank %d (%lu bytes): %s\n",
+					state.rank, state.mpi_buffer_len,
+					completed ? "sent successfully" : "in flight");
+			}
+		}
 		if (completed) {
 			process_next_header(bev);
 			return;
 		}
 	} else if (state.mode == MPI_RECVING_MSG_SIZE) {
 		MPI_Test(&state.size_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("message size from rank %d: %s\n", state.rank,
+				completed ? "received successfully" : "in flight");
+		}
 		if (completed) {
 			if (state.mpi_buffer_len > 0)
 				post_mpi_recv_msg(bev);
@@ -213,6 +227,11 @@ static inline void update_connection_status(
 		}
 	} else if (state.mode == MPI_RECVING_MSG) {
 		MPI_Test(&state.body_msg_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("message from rank %d (%lu bytes): %s\n",
+				state.rank, state.mpi_buffer_len,
+				completed ? "received successfully" : "in flight");
+		}
 		if (completed) {
 			process_next_header(bev);
 			return;
@@ -244,6 +263,10 @@ static inline void post_mpi_send(struct bufferevent* bev,
 	state.mpi_buffer_len = size;
 	state.mpi_buffer = (char*)malloc(size);
 
+	if (opt::verbose >= 2)
+		printf("sending message size %lu to rank %d\n",
+			state.mpi_buffer_len, state.rank);
+
 	// send message size in advance of message body
 	MPI_Isend(&state.mpi_buffer_len, 1, MPI_UINT64_T,
 		state.rank, 0, MPI_COMM_WORLD,
@@ -251,10 +274,16 @@ static inline void post_mpi_send(struct bufferevent* bev,
 
 	// send message body (a length of zero indicates EOF)
 	if (state.mpi_buffer_len > 0) {
+
+		if (opt::verbose >= 2)
+			printf("sending message to rank %d (%lu bytes)\n",
+				state.rank, state.mpi_buffer_len);
+
 		assert(state.mpi_buffer != NULL);
 		MPI_Isend(state.mpi_buffer, state.mpi_buffer_len,
 				MPI_BYTE, state.rank, MPI_DEFAULT_TAG,
 				MPI_COMM_WORLD, &state.body_msg_id);
+
 	}
 
 	update_connection_status(socket, 0, (void*)bev);
@@ -276,6 +305,10 @@ static inline void post_mpi_recv_size(struct bufferevent* bev,
 	state.clear();
 	state.mode = MPI_RECVING_MSG_SIZE;
 	state.rank = rank;
+
+	if (opt::verbose >= 2)
+		printf("receiving message size from rank %d\n",
+			state.rank);
 
 	// send message size in advance of message body
 	MPI_Irecv(&state.mpi_buffer_len, 1, MPI_UINT64_T,
@@ -302,7 +335,13 @@ static inline void post_mpi_recv_msg(struct bufferevent* bev)
 
 	// send message body (a length of zero indicates EOF)
 	if (state.mpi_buffer_len > 0) {
+
 		assert(state.mpi_buffer != NULL);
+
+		if (opt::verbose >= 2)
+			printf("receiving message from rank %d (%lu bytes)\n",
+				state.rank, state.mpi_buffer_len);
+
 		MPI_Isend(state.mpi_buffer, state.mpi_buffer_len,
 				MPI_BYTE, state.rank, MPI_DEFAULT_TAG,
 				MPI_COMM_WORLD, &state.body_msg_id);
@@ -339,7 +378,8 @@ process_next_header(struct bufferevent *bev)
 	if (header == NULL)
 		return;
 
-	printf("Received header line: '%s'\n", header);
+	if (opt::verbose >= 2)
+		printf("Received header line: '%s'\n", header);
 
 	std::stringstream ss(header);
 	free(header);
@@ -364,7 +404,7 @@ process_next_header(struct bufferevent *bev)
 		ss >> rank;
 		ss >> size;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(stderr, "malformed SEND header, "
+			fprintf(stderr, "error: malformed SEND header, "
 				"expected 'SEND <RANK> <BYTES>'\n");
 			return;
 		}
@@ -375,14 +415,14 @@ process_next_header(struct bufferevent *bev)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(stderr, "malformed RECV header, "
+			fprintf(stderr, "error: malformed RECV header, "
 				"expected 'RECV <RANK>'\n");
 			return;
 		}
 		post_mpi_recv_size(bev, rank);
 
 	} else {
-		fprintf(stderr, "error: unrecognized header '%s'\n",
+		fprintf(stderr, "error: unrecognized header command '%s'\n",
 			command.c_str());
 	}
 
@@ -420,7 +460,8 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 
 	// connect to client (or die)
 	evutil_socket_t fd = UnixSocket::accept(listener, false);
-	printf("Connected to client.\n");
+	if (opt::verbose)
+		printf("Connected to client.\n");
 
 	// track state of connection in global map
 	std::pair<ConnectionStateMap::iterator, bool>
@@ -458,7 +499,8 @@ static inline void server_loop(const char* socketPath)
 	int result = event_add(listener_event, NULL);
 	assert(result == 0);
 
-	printf("Waiting for connection...\n");
+	if (opt::verbose)
+		printf("Listening for connections...\n");
 
 	// start libevent loop
 	event_base_dispatch(base);
@@ -481,7 +523,7 @@ static inline int cmd_init(int argc, char** argv)
 			std::cout << INIT_USAGE_MESSAGE;
 			return EXIT_SUCCESS;
 		  case 'v':
-			arg >> opt::verbose;
+			opt::verbose++;
 			break;
 		}
 		if (optarg != NULL && (!arg.eof() || arg.fail())) {
