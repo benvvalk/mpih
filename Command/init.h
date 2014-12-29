@@ -126,29 +126,29 @@ struct Connection {
 };
 
 typedef std::map<evutil_socket_t, Connection> ConnectionMap;
-ConnectionMap g_connectionStates;
+ConnectionMap g_connections;
 
 #define MAX_READ_SIZE 16384
 #define MAX_HEADER_SIZE 256
 #define MPI_DEFAULT_TAG 0
 
 static inline Connection&
-get_connection_state(evutil_socket_t socket)
+get_connection(evutil_socket_t socket)
 {
 	ConnectionMap::iterator it =
-		g_connectionStates.find(socket);
-	assert(it != g_connectionStates.end());
+		g_connections.find(socket);
+	assert(it != g_connections.end());
 
 	return it->second;
 }
 
 static inline Connection&
-get_connection_state(struct bufferevent* bev)
+get_connection(struct bufferevent* bev)
 {
 	assert(bev != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-	return get_connection_state(socket);
+	return get_connection(socket);
 }
 
 static inline void
@@ -157,7 +157,7 @@ close_connection(struct bufferevent* bev)
 	assert(bev != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-	size_t numRemoved = g_connectionStates.erase(socket);
+	size_t numRemoved = g_connections.erase(socket);
 	assert(numRemoved == 1);
 
 	bufferevent_free(bev);
@@ -218,7 +218,7 @@ static inline void update_mpi_status(
 	assert(input != NULL);
 	size_t bytes_ready = evbuffer_get_length(input);
 
-	Connection& connection = get_connection_state(socket);
+	Connection& connection = get_connection(socket);
 
 	int completed = 0;
 	if (connection.mode == MPI_SENDING_CHUNK) {
@@ -290,7 +290,7 @@ static inline void mpi_send_eof(struct bufferevent* bev)
 	assert(bev != NULL);
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	Connection& connection = get_connection_state(socket);
+	Connection& connection = get_connection(socket);
 
 	assert(connection.mode == MPI_READY_TO_SEND);
 
@@ -318,7 +318,7 @@ static inline void post_mpi_send(struct bufferevent* bev)
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 	assert(connection.mode == MPI_READY_TO_SEND);
 
 	struct evbuffer* input = bufferevent_get_input(bev);
@@ -367,7 +367,7 @@ static inline void do_next_mpi_send(struct bufferevent* bev)
 
 	struct event_base* base = bufferevent_get_base(bev);
 
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 	assert(connection.mode == MPI_READY_TO_SEND);
 
 	struct evbuffer* input = bufferevent_get_input(bev);
@@ -393,7 +393,7 @@ static inline void post_mpi_recv_size(struct bufferevent* bev,
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 	assert(connection.mode == READING_COMMAND);
 
 	connection.mode = MPI_RECVING_MSG_SIZE;
@@ -420,7 +420,7 @@ static inline void post_mpi_recv_msg(struct bufferevent* bev)
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 	assert(connection.mode == MPI_RECVING_MSG_SIZE);
 
 	connection.mode = MPI_RECVING_MSG;
@@ -460,7 +460,7 @@ static inline void
 process_next_header(struct bufferevent *bev)
 {
 	assert(bev != NULL);
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 
 	connection.clear();
 	connection.mode = READING_COMMAND;
@@ -532,7 +532,7 @@ static inline void
 init_read_handler(struct bufferevent *bev, void *arg)
 {
 	assert(bev != NULL);
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
 
@@ -559,7 +559,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	struct event_base* base = bufferevent_get_base(bev);
 	assert(base != NULL);
 
-	Connection& connection = get_connection_state(bev);
+	Connection& connection = get_connection(bev);
 
 	if (error & BEV_EVENT_EOF) {
 		// client has closed socket
@@ -595,7 +595,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 
 	// track state of connection in global map
 	std::pair<ConnectionMap::iterator, bool>
-		inserted = g_connectionStates.insert(
+		inserted = g_connections.insert(
 		std::make_pair(fd, Connection()));
 	assert(inserted.second);
 	inserted.first->second.bev = bev;
