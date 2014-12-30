@@ -112,7 +112,7 @@ int cmd_rank(int argc, char** argv)
 
 	bufferevent_setcb(bev, rank_read_handler, NULL,
 		rank_event_handler, (void*)base);
-	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
+	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
 	// send command to 'mpi init' daemon

@@ -2,6 +2,9 @@
 #define _CONNECTION_H_
 
 #include <mpi.h>
+#include <vector>
+#include <algorithm>
+#include <cassert>
 
 enum ConnectionState {
 	READING_COMMAND=0,
@@ -120,5 +123,22 @@ private:
 };
 
 size_t Connection::next_connection_id = 0;
+
+typedef std::vector<Connection> ConnectionList;
+static ConnectionList g_connections;
+
+static inline void
+close_connection(Connection& connection)
+{
+	connection.close();
+
+	ConnectionList::iterator it = std::find(
+		g_connections.begin(), g_connections.end(),
+		connection);
+
+	assert(it != g_connections.end());
+
+	g_connections.erase(it);
+}
 
 #endif
