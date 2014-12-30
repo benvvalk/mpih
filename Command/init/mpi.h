@@ -19,117 +19,8 @@ namespace mpi {
 static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds);
-static inline void process_next_header(Connection& connection);
-static inline void mpi_recv_chunk_size(Connection& connection);
-static inline void mpi_recv_chunk(Connection& connection);
-static inline void mpi_send_chunk(Connection& connection);
-static inline void mpi_send_eof(Connection& connection);
-static inline void do_next_mpi_send(Connection& connection);
-
 static inline void update_mpi_status(
-	evutil_socket_t socket, short event, void* arg)
-{
-	const unsigned TIMER_SEC = 1;
-
-	assert(arg != NULL);
-	Connection& connection = *(Connection*)arg;
-
-	struct bufferevent* bev = connection.bev;
-	assert(bev != NULL);
-
-	struct event_base* base = bufferevent_get_base(bev);
-	assert(base != NULL);
-
-	struct evbuffer* input = bufferevent_get_input(bev);
-	assert(input != NULL);
-
-	size_t bytes_ready = evbuffer_get_length(input);
-
-	struct evbuffer* output = bufferevent_get_output(bev);
-	assert(output != NULL);
-
-	int completed = 0;
-	if (connection.state == MPI_SENDING_CHUNK) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
-		if (opt::verbose >= 3) {
-			printf("chunk size %lu to rank %d: %s\n",
-				connection.chunk_size, connection.rank,
-				completed ? "sent successfully" : "in flight");
-		}
-		if (completed) {
-			MPI_Test(&connection.chunk_request_id, &completed, MPI_STATUS_IGNORE);
-			if (opt::verbose >= 3) {
-				printf("chunk to rank %d (%lu bytes): %s\n",
-					connection.rank, connection.chunk_size,
-					completed ? "sent successfully" : "in flight");
-			}
-		}
-		if (completed) {
-			connection.clear_mpi_buffer();
-			connection.state = MPI_READY_TO_SEND;
-			if (bytes_ready > 0)
-				do_next_mpi_send(connection);
-			return;
-		}
-	} else if (connection.state == MPI_SENDING_EOF) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
-		if (opt::verbose >= 3) {
-			printf("EOF to rank %d: %s\n", connection.rank,
-				completed ? "sent successfully" : "in flight");
-		}
-		if (completed) {
-			close_connection(connection);
-			return;
-		}
-	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
-		if (opt::verbose >= 3) {
-			printf("chunk size from rank %d: %s\n", connection.rank,
-				completed ? "received successfully" : "in flight");
-		}
-		if (completed) {
-			if (connection.chunk_size == 0) {
-				connection.state = FLUSHING_SOCKET;
-				if (evbuffer_get_length(output) == 0)
-					close_connection(connection);
-			}
-			else {
-				connection.state = MPI_READY_TO_RECV_CHUNK;
-				mpi_recv_chunk(connection);
-			}
-			return;
-		}
-	} else if (connection.state == MPI_RECVING_CHUNK) {
-		MPI_Test(&connection.chunk_request_id, &completed, MPI_STATUS_IGNORE);
-		if (opt::verbose >= 3) {
-			printf("chunk from rank %d (%lu bytes): %s\n",
-				connection.rank, connection.chunk_size,
-				completed ? "received successfully" : "in flight");
-		}
-		if (completed) {
-			// copy recv'd data from MPI buffer to Unix socket
-			assert(connection.chunk_size > 0);
-			evbuffer_add(output, connection.chunk_buffer,
-				connection.chunk_size);
-			// clear MPI buffer and other state
-			connection.clear();
-			// post receive for size of next chunk
-			connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
-			mpi_recv_chunk_size(connection);
-			return;
-		}
-	} else if (connection.state == FLUSHING_SOCKET) {
-		if (evbuffer_get_length(output) == 0) {
-			close_connection(connection);
-			return;
-		}
-	}
-
-	// still waiting for current send/recv to complete;
-	// check again in TIMER_SEC
-	create_timer_event(base, update_mpi_status,
-			(void*)&connection, TIMER_SEC);
-}
+	evutil_socket_t socket, short event, void* arg);
 
 static inline void mpi_send_eof(Connection& connection)
 {
@@ -275,6 +166,111 @@ static inline void mpi_recv_chunk(Connection& connection)
 			MPI_COMM_WORLD, &connection.chunk_request_id);
 
 	update_mpi_status(socket, 0, (void*)&connection);
+}
+
+static inline void update_mpi_status(
+	evutil_socket_t socket, short event, void* arg)
+{
+	const unsigned TIMER_SEC = 1;
+
+	assert(arg != NULL);
+	Connection& connection = *(Connection*)arg;
+
+	struct bufferevent* bev = connection.bev;
+	assert(bev != NULL);
+
+	struct event_base* base = bufferevent_get_base(bev);
+	assert(base != NULL);
+
+	struct evbuffer* input = bufferevent_get_input(bev);
+	assert(input != NULL);
+
+	size_t bytes_ready = evbuffer_get_length(input);
+
+	struct evbuffer* output = bufferevent_get_output(bev);
+	assert(output != NULL);
+
+	int completed = 0;
+	if (connection.state == MPI_SENDING_CHUNK) {
+		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("chunk size %lu to rank %d: %s\n",
+				connection.chunk_size, connection.rank,
+				completed ? "sent successfully" : "in flight");
+		}
+		if (completed) {
+			MPI_Test(&connection.chunk_request_id, &completed, MPI_STATUS_IGNORE);
+			if (opt::verbose >= 3) {
+				printf("chunk to rank %d (%lu bytes): %s\n",
+					connection.rank, connection.chunk_size,
+					completed ? "sent successfully" : "in flight");
+			}
+		}
+		if (completed) {
+			connection.clear_mpi_buffer();
+			connection.state = MPI_READY_TO_SEND;
+			if (bytes_ready > 0)
+				do_next_mpi_send(connection);
+			return;
+		}
+	} else if (connection.state == MPI_SENDING_EOF) {
+		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("EOF to rank %d: %s\n", connection.rank,
+				completed ? "sent successfully" : "in flight");
+		}
+		if (completed) {
+			close_connection(connection);
+			return;
+		}
+	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
+		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("chunk size from rank %d: %s\n", connection.rank,
+				completed ? "received successfully" : "in flight");
+		}
+		if (completed) {
+			if (connection.chunk_size == 0) {
+				connection.state = FLUSHING_SOCKET;
+				if (evbuffer_get_length(output) == 0)
+					close_connection(connection);
+			}
+			else {
+				connection.state = MPI_READY_TO_RECV_CHUNK;
+				mpi_recv_chunk(connection);
+			}
+			return;
+		}
+	} else if (connection.state == MPI_RECVING_CHUNK) {
+		MPI_Test(&connection.chunk_request_id, &completed, MPI_STATUS_IGNORE);
+		if (opt::verbose >= 3) {
+			printf("chunk from rank %d (%lu bytes): %s\n",
+				connection.rank, connection.chunk_size,
+				completed ? "received successfully" : "in flight");
+		}
+		if (completed) {
+			// copy recv'd data from MPI buffer to Unix socket
+			assert(connection.chunk_size > 0);
+			evbuffer_add(output, connection.chunk_buffer,
+				connection.chunk_size);
+			// clear MPI buffer and other state
+			connection.clear();
+			// post receive for size of next chunk
+			connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
+			mpi_recv_chunk_size(connection);
+			return;
+		}
+	} else if (connection.state == FLUSHING_SOCKET) {
+		if (evbuffer_get_length(output) == 0) {
+			close_connection(connection);
+			return;
+		}
+	}
+
+	// still waiting for current send/recv to complete;
+	// check again in TIMER_SEC
+	create_timer_event(base, update_mpi_status,
+			(void*)&connection, TIMER_SEC);
 }
 
 #endif
