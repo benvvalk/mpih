@@ -20,7 +20,7 @@ static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds);
 static inline void process_next_header(Connection& connection);
-static inline void post_mpi_recv_msg(Connection& connection);
+static inline void mpi_recv_chunk(Connection& connection);
 static inline void mpi_send_chunk(Connection& connection);
 static inline void mpi_send_eof(Connection& connection);
 static inline void do_next_mpi_send(Connection& connection);
@@ -85,7 +85,7 @@ static inline void update_mpi_status(
 		}
 		if (completed) {
 			if (connection.chunk_size > 0)
-				post_mpi_recv_msg(connection);
+				mpi_recv_chunk(connection);
 			else
 				process_next_header(connection);
 			return;
@@ -207,7 +207,7 @@ static inline void do_next_mpi_send(Connection& connection)
 	}
 }
 
-static inline void post_mpi_recv_size(Connection& connection,
+static inline void mpi_recv_chunk_size(Connection& connection,
 	int rank)
 {
 	assert(connection.state == READING_HEADER);
@@ -235,7 +235,7 @@ static inline void post_mpi_recv_size(Connection& connection,
 	update_mpi_status(socket, 0, (void*)&connection);
 }
 
-static inline void post_mpi_recv_msg(Connection& connection)
+static inline void mpi_recv_chunk(Connection& connection)
 {
 	assert(connection.state == MPI_RECVING_CHUNK);
 

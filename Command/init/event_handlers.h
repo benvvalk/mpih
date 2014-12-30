@@ -108,7 +108,7 @@ process_next_header(Connection& connection)
 				"expected 'RECV <RANK>'\n");
 			return;
 		}
-		post_mpi_recv_size(connection, rank);
+		mpi_recv_chunk_size(connection, rank);
 
 	} else {
 		fprintf(stderr, "error: unrecognized header command '%s'\n",
