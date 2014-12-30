@@ -64,10 +64,14 @@ enum ConnectionState {
 
 struct Connection {
 
+	/** unique identifier for connection */
+	size_t connection_id;
 	/** connection state (e.g. sending data) */
 	ConnectionState state;
 	/** remote rank for sending/receiving data */
 	int rank;
+	/** socket (connects to local client) */
+	evutil_socket_t socket;
 	/** socket buffer (managed by libevent) */
 	struct bufferevent* bev;
 	/** length of MPI send/recv buffer */
@@ -81,9 +85,11 @@ struct Connection {
 	/** indicates Unix socket has been closed on remote end. */
 	bool eof;
 
-	Connection() :
+	Connection(unsigned id) :
+		connection_id(id),
 		state(READING_COMMAND),
 		rank(0),
+		socket(-1),
 		bev(NULL),
 		chunk_size(0),
 		chunk_buffer(NULL),
@@ -95,6 +101,12 @@ struct Connection {
 	~Connection()
 	{
 		clear();
+	}
+
+	bool operator==(const Connection& connection)
+	{
+		return connection_id ==
+			connection.connection_id;
 	}
 
 	void clear_mpi_buffer()
@@ -125,42 +137,26 @@ struct Connection {
 
 };
 
-typedef std::map<evutil_socket_t, Connection> ConnectionMap;
-ConnectionMap g_connections;
+typedef std::vector<Connection> ConnectionList;
+ConnectionList g_connections;
+size_t g_next_connection_id = 0;
 
 #define MAX_READ_SIZE 16384
 #define MAX_HEADER_SIZE 256
 #define MPI_DEFAULT_TAG 0
 
-static inline Connection&
-get_connection(evutil_socket_t socket)
+static inline void
+close_connection(Connection& connection)
 {
-	ConnectionMap::iterator it =
-		g_connections.find(socket);
+	connection.close();
+
+	ConnectionList::iterator it = std::find(
+		g_connections.begin(), g_connections.end(),
+		connection);
+
 	assert(it != g_connections.end());
 
-	return it->second;
-}
-
-static inline Connection&
-get_connection(struct bufferevent* bev)
-{
-	assert(bev != NULL);
-
-	evutil_socket_t socket = bufferevent_getfd(bev);
-	return get_connection(socket);
-}
-
-static inline void
-close_connection(struct bufferevent* bev)
-{
-	assert(bev != NULL);
-
-	evutil_socket_t socket = bufferevent_getfd(bev);
-	size_t numRemoved = g_connections.erase(socket);
-	assert(numRemoved == 1);
-
-	bufferevent_free(bev);
+	g_connections.erase(it);
 }
 
 static inline bool
@@ -198,27 +194,30 @@ static inline void create_timer_event(struct event_base* base,
 
 // forward declarations
 static inline void
-process_next_header(struct bufferevent *bev);
-static inline void post_mpi_recv_msg(struct bufferevent* bev);
-static inline void post_mpi_send(struct bufferevent* bev);
-static inline void mpi_send_eof(struct event_base* base,
-	evutil_socket_t socket);
-static inline void do_next_mpi_send(struct bufferevent* bev);
+process_next_header(Connection& connection);
+static inline void post_mpi_recv_msg(Connection& connection);
+static inline void post_mpi_send(Connection& connection);
+static inline void mpi_send_eof(Connection& connection);
+static inline void do_next_mpi_send(Connection& connection);
 
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg)
 {
 	const unsigned TIMER_SEC = 1;
 
-	struct bufferevent* bev = (bufferevent*)arg;
+	assert(arg != NULL);
+	Connection& connection = *(Connection*)arg;
+
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
+
 	struct event_base* base = bufferevent_get_base(bev);
 	assert(base != NULL);
+
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
-	size_t bytes_ready = evbuffer_get_length(input);
 
-	Connection& connection = get_connection(socket);
+	size_t bytes_ready = evbuffer_get_length(input);
 
 	int completed = 0;
 	if (connection.state == MPI_SENDING_CHUNK) {
@@ -240,7 +239,7 @@ static inline void update_mpi_status(
 			connection.clear_mpi_buffer();
 			connection.state = MPI_READY_TO_SEND;
 			if (bytes_ready > 0)
-				do_next_mpi_send(bev);
+				do_next_mpi_send(connection);
 			return;
 		}
 	} else if (connection.state == MPI_SENDING_EOF) {
@@ -250,7 +249,7 @@ static inline void update_mpi_status(
 				completed ? "sent successfully" : "in flight");
 		}
 		if (completed) {
-			close_connection(bev);
+			close_connection(connection);
 			return;
 		}
 	} else if (connection.state == MPI_RECVING_MSG_SIZE) {
@@ -261,9 +260,9 @@ static inline void update_mpi_status(
 		}
 		if (completed) {
 			if (connection.chunk_size > 0)
-				post_mpi_recv_msg(bev);
+				post_mpi_recv_msg(connection);
 			else
-				process_next_header(bev);
+				process_next_header(connection);
 			return;
 		}
 	} else if (connection.state == MPI_RECVING_MSG) {
@@ -274,7 +273,7 @@ static inline void update_mpi_status(
 				completed ? "received successfully" : "in flight");
 		}
 		if (completed) {
-			process_next_header(bev);
+			process_next_header(connection);
 			return;
 		}
 	}
@@ -285,12 +284,12 @@ static inline void update_mpi_status(
 			(void*)base, TIMER_SEC);
 }
 
-static inline void mpi_send_eof(struct bufferevent* bev)
+static inline void mpi_send_eof(Connection& connection)
 {
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
-	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	Connection& connection = get_connection(socket);
+	evutil_socket_t socket = bufferevent_getfd(bev);
 
 	assert(connection.state == MPI_READY_TO_SEND);
 
@@ -309,17 +308,17 @@ static inline void mpi_send_eof(struct bufferevent* bev)
 	update_mpi_status(socket, 0, (void*)bev);
 }
 
-static inline void post_mpi_send(struct bufferevent* bev)
+static inline void post_mpi_send(Connection& connection)
 {
+	assert(connection.state == MPI_READY_TO_SEND);
+
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
 	struct event_base* base = bufferevent_get_base(bev);
 	assert(base != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	Connection& connection = get_connection(bev);
-	assert(connection.state == MPI_READY_TO_SEND);
 
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
@@ -356,19 +355,19 @@ static inline void post_mpi_send(struct bufferevent* bev)
 		MPI_COMM_WORLD, &connection.chunk_request_id);
 
 	// check if MPI_Isend's have completed
-	update_mpi_status(socket, 0, (void*)bev);
+	update_mpi_status(socket, 0, (void*)&connection);
 }
 
-static inline void do_next_mpi_send(struct bufferevent* bev)
+static inline void do_next_mpi_send(Connection& connection)
 {
+	assert(connection.state == MPI_READY_TO_SEND);
+
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
 	struct event_base* base = bufferevent_get_base(bev);
-
-	Connection& connection = get_connection(bev);
-	assert(connection.state == MPI_READY_TO_SEND);
 
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
@@ -376,25 +375,25 @@ static inline void do_next_mpi_send(struct bufferevent* bev)
 	uint64_t bytes_ready = evbuffer_get_length(input);
 
 	if (connection.eof && bytes_ready == 0)
-		mpi_send_eof(bev);
+		mpi_send_eof(connection);
 	else {
 		assert(bytes_ready > 0);
-		post_mpi_send(bev);
+		post_mpi_send(connection);
 	}
 }
 
-static inline void post_mpi_recv_size(struct bufferevent* bev,
+static inline void post_mpi_recv_size(Connection& connection,
 	int rank)
 {
+	assert(connection.state == READING_COMMAND);
+
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
 	struct event_base* base = bufferevent_get_base(bev);
 	assert(base != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	Connection& connection = get_connection(bev);
-	assert(connection.state == READING_COMMAND);
 
 	connection.state = MPI_RECVING_MSG_SIZE;
 	connection.rank = rank;
@@ -408,20 +407,20 @@ static inline void post_mpi_recv_size(struct bufferevent* bev,
 		connection.rank, 0, MPI_COMM_WORLD,
 		&connection.chunk_size_request_id);
 
-	update_mpi_status(socket, 0, (void*)bev);
+	update_mpi_status(socket, 0, (void*)&connection);
 }
 
-static inline void post_mpi_recv_msg(struct bufferevent* bev)
+static inline void post_mpi_recv_msg(Connection& connection)
 {
+	assert(connection.state == MPI_RECVING_MSG_SIZE);
+
+	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
 	struct event_base* base = bufferevent_get_base(bev);
 	assert(base != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	Connection& connection = get_connection(bev);
-	assert(connection.state == MPI_RECVING_MSG_SIZE);
 
 	connection.state = MPI_RECVING_MSG;
 	connection.chunk_buffer = (char*)malloc(connection.chunk_size);
@@ -438,34 +437,40 @@ static inline void post_mpi_recv_msg(struct bufferevent* bev)
 		MPI_Isend(connection.chunk_buffer, connection.chunk_size,
 				MPI_BYTE, connection.rank, MPI_DEFAULT_TAG,
 				MPI_COMM_WORLD, &connection.chunk_request_id);
-		update_mpi_status(socket, 0, (void*)bev);
+		update_mpi_status(socket, 0, (void*)&connection);
 	}
 }
 
-static inline char* read_header(struct bufferevent* bev)
+static inline char* read_header(Connection& connection)
 {
+	struct bufferevent* bev = connection.bev;
+	assert(bev != NULL);
+
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
+
 	size_t len = evbuffer_get_length(input);
 	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
+
 	if (line == NULL && len > MAX_HEADER_SIZE) {
 		fprintf(stderr, "header line exceeded max length "
 				"(%d bytes)\n", MAX_HEADER_SIZE);
-		close_connection(bev);
+		close_connection(connection);
 	}
+
 	return line;
 }
 
 static inline void
-process_next_header(struct bufferevent *bev)
+process_next_header(Connection& connection)
 {
-	assert(bev != NULL);
-	Connection& connection = get_connection(bev);
-
 	connection.clear();
 	connection.state = READING_COMMAND;
 
-	char* header = read_header(bev);
+	struct bufferevent* bev = connection.bev;
+	assert(bev != NULL);
+
+	char* header = read_header(connection);
 
 	// haven't fully received header line yet
 	if (header == NULL)
@@ -508,7 +513,7 @@ process_next_header(struct bufferevent *bev)
 		assert(input != NULL);
 
 		if (evbuffer_get_length(input) > 0)
-			post_mpi_send(bev);
+			post_mpi_send(connection);
 
 	} else if (command == "RECV") {
 
@@ -519,7 +524,7 @@ process_next_header(struct bufferevent *bev)
 				"expected 'RECV <RANK>'\n");
 			return;
 		}
-		post_mpi_recv_size(bev, rank);
+		post_mpi_recv_size(connection, rank);
 
 	} else {
 		fprintf(stderr, "error: unrecognized header command '%s'\n",
@@ -531,49 +536,41 @@ process_next_header(struct bufferevent *bev)
 static inline void
 init_read_handler(struct bufferevent *bev, void *arg)
 {
-	assert(bev != NULL);
-	Connection& connection = get_connection(bev);
-	struct evbuffer* input = bufferevent_get_input(bev);
-	assert(input != NULL);
+	assert(arg != NULL);
+	Connection& connection = *(Connection*)arg;
 
 	if (connection.state == READING_COMMAND)
-		process_next_header(bev);
+		process_next_header(connection);
 	else if (connection.state == MPI_READY_TO_SEND)
-		do_next_mpi_send(bev);
+		do_next_mpi_send(connection);
 }
 
 static inline void
 init_event_handler(struct bufferevent *bev, short error, void *arg)
 {
-	assert(bev != NULL);
-
 	// we are not using any timeouts
 	assert(!(error & BEV_EVENT_TIMEOUT));
 
-	evutil_socket_t socket = bufferevent_getfd(bev);
+	assert(arg != NULL);
+	Connection& connection = *(Connection*)arg;
 
-	struct evbuffer* input = bufferevent_get_input(bev);
-	assert(input != NULL);
-	size_t bytes_ready = evbuffer_get_length(input);
-
-	struct event_base* base = bufferevent_get_base(bev);
-	assert(base != NULL);
-
-	Connection& connection = get_connection(bev);
+	// for consistency, always use bev from connection
+	bev = connection.bev;
+	assert(connection.bev != NULL);
 
 	if (error & BEV_EVENT_EOF) {
 		// client has closed socket
 		connection.eof = true;
 		// we may still have pending MPI sends
 		if (connection.state == MPI_READY_TO_SEND)
-			do_next_mpi_send(bev);
+			do_next_mpi_send(connection);
 	} else if (error & BEV_EVENT_ERROR) {
 		perror("libevent");
-		close_connection(bev);
+		close_connection(connection);
 	}
 
 	if (!mpi_calls_pending(connection.state))
-		close_connection(bev);
+		close_connection(connection);
 }
 
 static inline void
@@ -589,20 +586,19 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 
 
 	// create buffer and associate with new connection
-	struct bufferevent* bev = bufferevent_socket_new(base,
-		fd, 0);
+	struct bufferevent* bev = bufferevent_socket_new(base, fd, 0);
 	assert(bev != NULL);
 
 	// track state of connection in global map
-	std::pair<ConnectionMap::iterator, bool>
-		inserted = g_connections.insert(
-		std::make_pair(fd, Connection()));
-	assert(inserted.second);
-	inserted.first->second.bev = bev;
+	g_connections.push_back(
+		Connection(g_next_connection_id++));
+	Connection& connection = g_connections.back();
+	connection.bev = bev;
+	connection.socket = fd;
 
 	// set callbacks for buffer input/output
 	bufferevent_setcb(bev, init_read_handler, NULL,
-		init_event_handler, NULL);
+		init_event_handler, &connection);
 	// set low/high watermarks for invoking callbacks
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_READ_SIZE);
 	// enable callbacks
