@@ -71,25 +71,6 @@ close_connection(Connection& connection)
 	g_connections.erase(it);
 }
 
-static inline bool
-mpi_calls_pending(ConnectionState state)
-{
-	switch(state)
-	{
-	case MPI_READY_TO_RECV_MSG_SIZE:
-	case MPI_READY_TO_RECV_MSG:
-	case MPI_READY_TO_SEND:
-	case MPI_RECVING_MSG_SIZE:
-	case MPI_RECVING_MSG:
-	case MPI_SENDING_CHUNK:
-	case MPI_SENDING_EOF:
-		return true;
-	case READING_COMMAND:
-	case CLOSED:
-		return false;
-	}
-}
-
 static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds)
@@ -478,7 +459,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 		perror("libevent");
 	}
 
-	if (!mpi_calls_pending(connection.state))
+	if (!connection.mpi_ops_pending())
 		close_connection(connection);
 }
 

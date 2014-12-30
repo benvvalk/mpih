@@ -91,6 +91,24 @@ struct Connection {
 		eof = true;
 	}
 
+	bool mpi_ops_pending()
+	{
+		switch(state)
+		{
+			case MPI_READY_TO_RECV_MSG_SIZE:
+			case MPI_READY_TO_RECV_MSG:
+			case MPI_READY_TO_SEND:
+			case MPI_RECVING_MSG_SIZE:
+			case MPI_RECVING_MSG:
+			case MPI_SENDING_CHUNK:
+			case MPI_SENDING_EOF:
+				return true;
+			case READING_COMMAND:
+			case CLOSED:
+				return false;
+		}
+	}
+
 private:
 
 	/** next available connection id */
