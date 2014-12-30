@@ -21,7 +21,7 @@ static inline void create_timer_event(struct event_base* base,
 	void* callback_arg, unsigned seconds);
 static inline void process_next_header(Connection& connection);
 static inline void post_mpi_recv_msg(Connection& connection);
-static inline void post_mpi_send(Connection& connection);
+static inline void mpi_send_chunk(Connection& connection);
 static inline void mpi_send_eof(Connection& connection);
 static inline void do_next_mpi_send(Connection& connection);
 
@@ -133,7 +133,7 @@ static inline void mpi_send_eof(Connection& connection)
 	update_mpi_status(socket, 0, (void*)&connection);
 }
 
-static inline void post_mpi_send(Connection& connection)
+static inline void mpi_send_chunk(Connection& connection)
 {
 	assert(connection.state == MPI_READY_TO_SEND);
 
@@ -203,7 +203,7 @@ static inline void do_next_mpi_send(Connection& connection)
 		mpi_send_eof(connection);
 	else {
 		assert(bytes_ready > 0);
-		post_mpi_send(connection);
+		mpi_send_chunk(connection);
 	}
 }
 

@@ -97,7 +97,7 @@ process_next_header(Connection& connection)
 		assert(input != NULL);
 
 		if (evbuffer_get_length(input) > 0)
-			post_mpi_send(connection);
+			mpi_send_chunk(connection);
 
 	} else if (command == "RECV") {
 
