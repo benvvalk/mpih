@@ -6,6 +6,7 @@
 #include <event2/bufferevent.h>
 
 #include "Options/CommonOptions.h"
+#include "Command/init/Connection.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
 #include <mpi.h>
@@ -14,6 +15,11 @@
 #include <sstream>
 #include <cassert>
 #include <algorithm>
+
+#define MPI_BUFFER_SIZE 65536
+#define MAX_READ_SIZE 16384
+#define MAX_HEADER_SIZE 256
+#define MPI_DEFAULT_TAG 0
 
 static const char INIT_USAGE_MESSAGE[] =
 "Usage: mpi init <socket_path>\n"
@@ -48,114 +54,8 @@ static const struct option init_longopts[] = {
 	{ NULL, 0, NULL, 0 }
 };
 
-enum ConnectionState {
-	READING_COMMAND=0,
-	MPI_READY_TO_RECV_MSG_SIZE,
-	MPI_READY_TO_RECV_MSG,
-	MPI_READY_TO_SEND,
-	MPI_RECVING_MSG_SIZE,
-	MPI_RECVING_MSG,
-	MPI_SENDING_CHUNK,
-	MPI_SENDING_EOF,
-	CLOSED
-};
-
-#define MPI_BUFFER_SIZE 65536
-
-struct Connection {
-
-	/** connection state (e.g. sending data) */
-	ConnectionState state;
-	/** remote rank for sending/receiving data */
-	int rank;
-	/** socket (connects to local client) */
-	evutil_socket_t socket;
-	/** socket buffer (managed by libevent) */
-	struct bufferevent* bev;
-	/** length of MPI send/recv buffer */
-	uint64_t chunk_size;
-	/** buffer for non-blocking MPI send/recv */
-	char* chunk_buffer;
-	/** ID for checking state of asynchronous send/recv */
-	MPI_Request chunk_size_request_id;
-	/** ID for checking state of asynchronous send/recv */
-	MPI_Request chunk_request_id;
-	/** indicates Unix socket has been closed on remote end. */
-	bool eof;
-
-	Connection() :
-		connection_id(next_connection_id),
-		state(READING_COMMAND),
-		rank(0),
-		socket(-1),
-		bev(NULL),
-		chunk_size(0),
-		chunk_buffer(NULL),
-		chunk_size_request_id(0),
-		chunk_request_id(0),
-		eof(false)
-	{
-		next_connection_id = (next_connection_id + 1) % SIZE_MAX;
-	}
-
-	~Connection()
-	{
-		clear();
-	}
-
-	bool operator==(const Connection& connection)
-	{
-		return connection_id ==
-			connection.connection_id;
-	}
-
-	void clear_mpi_buffer()
-	{
-		if (chunk_buffer != NULL)
-			free(chunk_buffer);
-		chunk_buffer = NULL;
-		chunk_size = 0;
-	}
-
-	void clear()
-	{
-		clear_mpi_buffer();
-		state = READING_COMMAND;
-		rank = 0;
-		chunk_size_request_id = 0;
-		chunk_request_id = 0;
-		eof = false;
-	}
-
-	void close()
-	{
-		if (socket != -1)
-			evutil_closesocket(socket);
-		socket = -1;
-		if (bev != NULL)
-			bufferevent_free(bev);
-		bev = NULL;
-		eof = true;
-	}
-
-private:
-
-	/** next available connection id */
-	static size_t next_connection_id;
-
-	/** unique identifier for this connection */
-	size_t connection_id;
-
-};
-
-size_t Connection::next_connection_id = 0;
-
 typedef std::vector<Connection> ConnectionList;
 ConnectionList g_connections;
-
-#define MAX_READ_SIZE 16384
-#define MAX_HEADER_SIZE 256
-#define MPI_DEFAULT_TAG 0
 
 static inline void
 close_connection(Connection& connection)
