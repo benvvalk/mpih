@@ -77,7 +77,7 @@ static inline void update_mpi_status(
 			close_connection(connection);
 			return;
 		}
-	} else if (connection.state == MPI_RECVING_MSG_SIZE) {
+	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, MPI_STATUS_IGNORE);
 		if (opt::verbose >= 3) {
 			printf("chunk size from rank %d: %s\n", connection.rank,
@@ -90,7 +90,7 @@ static inline void update_mpi_status(
 				process_next_header(connection);
 			return;
 		}
-	} else if (connection.state == MPI_RECVING_MSG) {
+	} else if (connection.state == MPI_RECVING_CHUNK) {
 		MPI_Test(&connection.chunk_request_id, &completed, MPI_STATUS_IGNORE);
 		if (opt::verbose >= 3) {
 			printf("chunk from rank %d (%lu bytes): %s\n",
@@ -210,7 +210,7 @@ static inline void do_next_mpi_send(Connection& connection)
 static inline void post_mpi_recv_size(Connection& connection,
 	int rank)
 {
-	assert(connection.state == READING_COMMAND);
+	assert(connection.state == READING_HEADER);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
@@ -220,7 +220,7 @@ static inline void post_mpi_recv_size(Connection& connection,
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	connection.state = MPI_RECVING_MSG_SIZE;
+	connection.state = MPI_RECVING_CHUNK_SIZE;
 	connection.rank = rank;
 
 	if (opt::verbose >= 2)
@@ -237,7 +237,7 @@ static inline void post_mpi_recv_size(Connection& connection,
 
 static inline void post_mpi_recv_msg(Connection& connection)
 {
-	assert(connection.state == MPI_RECVING_MSG_SIZE);
+	assert(connection.state == MPI_RECVING_CHUNK);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
@@ -247,7 +247,7 @@ static inline void post_mpi_recv_msg(Connection& connection)
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
-	connection.state = MPI_RECVING_MSG;
+	connection.state = MPI_RECVING_CHUNK;
 	connection.chunk_buffer = (char*)malloc(connection.chunk_size);
 
 	// send message body (a length of zero indicates EOF)

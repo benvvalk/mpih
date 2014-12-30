@@ -7,12 +7,12 @@
 #include <cassert>
 
 enum ConnectionState {
-	READING_COMMAND=0,
-	MPI_READY_TO_RECV_MSG_SIZE,
-	MPI_READY_TO_RECV_MSG,
+	READING_HEADER=0,
+	MPI_READY_TO_RECV_CHUNK_SIZE,
+	MPI_READY_TO_RECV_CHUNK,
 	MPI_READY_TO_SEND,
-	MPI_RECVING_MSG_SIZE,
-	MPI_RECVING_MSG,
+	MPI_RECVING_CHUNK_SIZE,
+	MPI_RECVING_CHUNK,
 	MPI_SENDING_CHUNK,
 	MPI_SENDING_EOF,
 	CLOSED
@@ -41,7 +41,7 @@ struct Connection {
 
 	Connection() :
 		connection_id(next_connection_id),
-		state(READING_COMMAND),
+		state(READING_HEADER),
 		rank(0),
 		socket(-1),
 		bev(NULL),
@@ -76,7 +76,7 @@ struct Connection {
 	void clear()
 	{
 		clear_mpi_buffer();
-		state = READING_COMMAND;
+		state = READING_HEADER;
 		rank = 0;
 		chunk_size_request_id = 0;
 		chunk_request_id = 0;
@@ -98,15 +98,15 @@ struct Connection {
 	{
 		switch(state)
 		{
-			case MPI_READY_TO_RECV_MSG_SIZE:
-			case MPI_READY_TO_RECV_MSG:
+			case MPI_READY_TO_RECV_CHUNK_SIZE:
+			case MPI_READY_TO_RECV_CHUNK:
 			case MPI_READY_TO_SEND:
-			case MPI_RECVING_MSG_SIZE:
-			case MPI_RECVING_MSG:
+			case MPI_RECVING_CHUNK_SIZE:
+			case MPI_RECVING_CHUNK:
 			case MPI_SENDING_CHUNK:
 			case MPI_SENDING_EOF:
 				return true;
-			case READING_COMMAND:
+			case READING_HEADER:
 			case CLOSED:
 				return false;
 		}

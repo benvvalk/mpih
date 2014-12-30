@@ -49,7 +49,7 @@ static inline void
 process_next_header(Connection& connection)
 {
 	connection.clear();
-	connection.state = READING_COMMAND;
+	connection.state = READING_HEADER;
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
@@ -122,7 +122,7 @@ init_read_handler(struct bufferevent *bev, void *arg)
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
-	if (connection.state == READING_COMMAND)
+	if (connection.state == READING_HEADER)
 		process_next_header(connection);
 	else if (connection.state == MPI_READY_TO_SEND)
 		do_next_mpi_send(connection);
