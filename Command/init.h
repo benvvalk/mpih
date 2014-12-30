@@ -64,8 +64,6 @@ enum ConnectionState {
 
 struct Connection {
 
-	/** unique identifier for connection */
-	size_t connection_id;
 	/** connection state (e.g. sending data) */
 	ConnectionState state;
 	/** remote rank for sending/receiving data */
@@ -85,8 +83,8 @@ struct Connection {
 	/** indicates Unix socket has been closed on remote end. */
 	bool eof;
 
-	Connection(unsigned id) :
-		connection_id(id),
+	Connection() :
+		connection_id(next_connection_id),
 		state(READING_COMMAND),
 		rank(0),
 		socket(-1),
@@ -96,7 +94,9 @@ struct Connection {
 		chunk_size_request_id(0),
 		chunk_request_id(0),
 		eof(false)
-	{ }
+	{
+		next_connection_id = (next_connection_id + 1) % SIZE_MAX;
+	}
 
 	~Connection()
 	{
@@ -138,11 +138,20 @@ struct Connection {
 		eof = true;
 	}
 
+private:
+
+	/** next available connection id */
+	static size_t next_connection_id;
+
+	/** unique identifier for this connection */
+	size_t connection_id;
+
 };
+
+size_t Connection::next_connection_id = 0;
 
 typedef std::vector<Connection> ConnectionList;
 ConnectionList g_connections;
-size_t g_next_connection_id = 0;
 
 #define MAX_READ_SIZE 16384
 #define MAX_HEADER_SIZE 256
@@ -590,8 +599,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 	assert(bev != NULL);
 
 	// track state of connection in global map
-	g_connections.push_back(
-		Connection(g_next_connection_id++));
+	g_connections.push_back(Connection());
 	Connection& connection = g_connections.back();
 	connection.bev = bev;
 	connection.socket = fd;
