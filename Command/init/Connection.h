@@ -30,7 +30,7 @@ struct Connection {
 	/** socket buffer (managed by libevent) */
 	struct bufferevent* bev;
 	/** length of MPI send/recv buffer */
-	uint64_t chunk_size;
+	int chunk_size;
 	/** buffer for non-blocking MPI send/recv */
 	char* chunk_buffer;
 	/** ID for checking state of asynchronous send/recv */
@@ -48,11 +48,11 @@ struct Connection {
 		bev(NULL),
 		chunk_size(0),
 		chunk_buffer(NULL),
-		chunk_size_request_id(0),
-		chunk_request_id(0),
 		eof(false)
 	{
 		next_connection_id = (next_connection_id + 1) % SIZE_MAX;
+		memset(&chunk_size_request_id, 0, sizeof(MPI_Request));
+		memset(&chunk_request_id, 0, sizeof(MPI_Request));
 	}
 
 	~Connection()
@@ -66,21 +66,21 @@ struct Connection {
 			connection.connection_id;
 	}
 
-	void clear_mpi_buffer()
+	void clear_mpi_state()
 	{
 		if (chunk_buffer != NULL)
 			free(chunk_buffer);
 		chunk_buffer = NULL;
 		chunk_size = 0;
+		memset(&chunk_size_request_id, 0, sizeof(MPI_Request));
+		memset(&chunk_request_id, 0, sizeof(MPI_Request));
 	}
 
 	void clear()
 	{
-		clear_mpi_buffer();
+		clear_mpi_state();
 		state = READING_HEADER;
 		rank = 0;
-		chunk_size_request_id = 0;
-		chunk_request_id = 0;
 		eof = false;
 	}
 
@@ -94,6 +94,14 @@ struct Connection {
 		bev = NULL;
 		eof = true;
 		state = CLOSED;
+	}
+
+	void printState()
+	{
+		printf("connection state:\n");
+		printf("\tstate: %d\n", state);
+		printf("\trank: %d\n", rank);
+		printf("\tchunk_size: %d\n", chunk_size);
 	}
 
 	bool mpi_ops_pending()
