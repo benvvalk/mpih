@@ -129,6 +129,9 @@ struct Connection {
 
 	void close()
 	{
+		if (socket != -1)
+			evutil_closesocket(socket);
+		socket = -1;
 		if (bev != NULL)
 			bufferevent_free(bev);
 		bev = NULL;
@@ -281,7 +284,7 @@ static inline void update_mpi_status(
 	// still waiting for current send/recv to complete;
 	// check again in TIMER_SEC
 	create_timer_event(base, update_mpi_status,
-			(void*)base, TIMER_SEC);
+			(void*)&connection, TIMER_SEC);
 }
 
 static inline void mpi_send_eof(Connection& connection)
@@ -305,7 +308,7 @@ static inline void mpi_send_eof(Connection& connection)
 		&connection.chunk_size_request_id);
 
 	// check if MPI_Isend has completed
-	update_mpi_status(socket, 0, (void*)bev);
+	update_mpi_status(socket, 0, (void*)&connection);
 }
 
 static inline void post_mpi_send(Connection& connection)
@@ -554,19 +557,16 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
-	// for consistency, always use bev from connection
-	bev = connection.bev;
-	assert(connection.bev != NULL);
-
 	if (error & BEV_EVENT_EOF) {
 		// client has closed socket
 		connection.eof = true;
 		// we may still have pending MPI sends
-		if (connection.state == MPI_READY_TO_SEND)
+		if (connection.state == MPI_READY_TO_SEND) {
 			do_next_mpi_send(connection);
+			return;
+		}
 	} else if (error & BEV_EVENT_ERROR) {
 		perror("libevent");
-		close_connection(connection);
 	}
 
 	if (!mpi_calls_pending(connection.state))
