@@ -15,6 +15,7 @@ enum ConnectionState {
 	MPI_READY_TO_SEND,
 	MPI_SENDING_CHUNK,
 	MPI_SENDING_EOF,
+	FLUSHING_SOCKET,
 	CLOSED
 };
 
@@ -92,6 +93,7 @@ struct Connection {
 			bufferevent_free(bev);
 		bev = NULL;
 		eof = true;
+		state = CLOSED;
 	}
 
 	bool mpi_ops_pending()

@@ -20,6 +20,7 @@ static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds);
 static inline void process_next_header(Connection& connection);
+static inline void mpi_recv_chunk_size(Connection& connection);
 static inline void mpi_recv_chunk(Connection& connection);
 static inline void mpi_send_chunk(Connection& connection);
 static inline void mpi_send_eof(Connection& connection);
@@ -43,6 +44,9 @@ static inline void update_mpi_status(
 	assert(input != NULL);
 
 	size_t bytes_ready = evbuffer_get_length(input);
+
+	struct evbuffer* output = bufferevent_get_output(bev);
+	assert(output != NULL);
 
 	int completed = 0;
 	if (connection.state == MPI_SENDING_CHUNK) {
@@ -84,10 +88,15 @@ static inline void update_mpi_status(
 				completed ? "received successfully" : "in flight");
 		}
 		if (completed) {
-			if (connection.chunk_size > 0)
+			if (connection.chunk_size == 0) {
+				connection.state = FLUSHING_SOCKET;
+				if (evbuffer_get_length(output) == 0)
+					close_connection(connection);
+			}
+			else {
+				connection.state = MPI_READY_TO_RECV_CHUNK;
 				mpi_recv_chunk(connection);
-			else
-				process_next_header(connection);
+			}
 			return;
 		}
 	} else if (connection.state == MPI_RECVING_CHUNK) {
@@ -98,7 +107,20 @@ static inline void update_mpi_status(
 				completed ? "received successfully" : "in flight");
 		}
 		if (completed) {
-			process_next_header(connection);
+			// copy recv'd data from MPI buffer to Unix socket
+			assert(connection.chunk_size > 0);
+			evbuffer_add(output, connection.chunk_buffer,
+				connection.chunk_size);
+			// clear MPI buffer and other state
+			connection.clear();
+			// post receive for size of next chunk
+			connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
+			mpi_recv_chunk_size(connection);
+			return;
+		}
+	} else if (connection.state == FLUSHING_SOCKET) {
+		if (evbuffer_get_length(output) == 0) {
+			close_connection(connection);
 			return;
 		}
 	}
@@ -207,24 +229,19 @@ static inline void do_next_mpi_send(Connection& connection)
 	}
 }
 
-static inline void mpi_recv_chunk_size(Connection& connection,
-	int rank)
+static inline void mpi_recv_chunk_size(Connection& connection)
 {
-	assert(connection.state == READING_HEADER);
+	assert(connection.state == MPI_READY_TO_RECV_CHUNK_SIZE);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
-	struct event_base* base = bufferevent_get_base(bev);
-	assert(base != NULL);
-
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
 	connection.state = MPI_RECVING_CHUNK_SIZE;
-	connection.rank = rank;
 
 	if (opt::verbose >= 2)
-		printf("receiving message size from rank %d\n",
+		printf("receiving chunk size from rank %d\n",
 			connection.rank);
 
 	// send message size in advance of message body
@@ -237,33 +254,27 @@ static inline void mpi_recv_chunk_size(Connection& connection,
 
 static inline void mpi_recv_chunk(Connection& connection)
 {
-	assert(connection.state == MPI_RECVING_CHUNK);
+	assert(connection.state == MPI_READY_TO_RECV_CHUNK);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
-
-	struct event_base* base = bufferevent_get_base(bev);
-	assert(base != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
 
 	connection.state = MPI_RECVING_CHUNK;
 	connection.chunk_buffer = (char*)malloc(connection.chunk_size);
+	assert(connection.chunk_size > 0);
+	assert(connection.chunk_buffer != NULL);
 
-	// send message body (a length of zero indicates EOF)
-	if (connection.chunk_size > 0) {
-
-		assert(connection.chunk_buffer != NULL);
-
-		if (opt::verbose >= 2)
-			printf("receiving message from rank %d (%lu bytes)\n",
+	if (opt::verbose >= 2)
+		printf("receiving message from rank %d (%lu bytes)\n",
 				connection.rank, connection.chunk_size);
 
-		MPI_Isend(connection.chunk_buffer, connection.chunk_size,
-				MPI_BYTE, connection.rank, MPI_DEFAULT_TAG,
-				MPI_COMM_WORLD, &connection.chunk_request_id);
-		update_mpi_status(socket, 0, (void*)&connection);
-	}
+	MPI_Isend(connection.chunk_buffer, connection.chunk_size,
+			MPI_BYTE, connection.rank, MPI_DEFAULT_TAG,
+			MPI_COMM_WORLD, &connection.chunk_request_id);
+
+	update_mpi_status(socket, 0, (void*)&connection);
 }
 
 #endif

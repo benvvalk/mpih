@@ -108,7 +108,12 @@ process_next_header(Connection& connection)
 				"expected 'RECV <RANK>'\n");
 			return;
 		}
-		mpi_recv_chunk_size(connection, rank);
+
+		connection.clear();
+		connection.rank = rank;
+		connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
+
+		mpi_recv_chunk_size(connection);
 
 	} else {
 		fprintf(stderr, "error: unrecognized header command '%s'\n",
