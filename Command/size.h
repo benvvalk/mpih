@@ -4,6 +4,7 @@
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
+#include "Command/client/event_handlers.h"
 #include <getopt.h>
 #include <iostream>
 #include <sstream>
@@ -29,44 +30,6 @@ static const struct option size_longopts[] = {
 	{ "verbose",  no_argument, NULL, 'v' },
 	{ NULL, 0, NULL, 0 }
 };
-
-static inline void
-size_read_handler(struct bufferevent *bev, void *arg)
-{
-	const int MAX_LINE_SIZE = 256;
-
-	struct event_base *base = (event_base*)arg;
-	struct evbuffer* input = bufferevent_get_input(bev);
-
-	size_t origLen = evbuffer_get_length(input);
-	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
-
-	if (line != NULL) {
-		puts(line);
-		event_base_loopexit(base, NULL);
-	} else if (origLen >= MAX_LINE_SIZE) {
-		fprintf(stderr, "response line exceeded max length "
-				"(%d bytes)\n", MAX_LINE_SIZE);
-		bufferevent_free(bev);
-	}
-
-	free(line);
-}
-
-static inline void
-size_event_handler(struct bufferevent *bev, short error, void *arg)
-{
-	// we should never see this
-	assert(!(error & BEV_EVENT_TIMEOUT));
-
-	if (error & BEV_EVENT_EOF) {
-		// connection closed
-	} else if (error & BEV_EVENT_ERROR) {
-		perror("libevent");
-	}
-
-	bufferevent_free(bev);
-}
 
 int cmd_size(int argc, char** argv)
 {
@@ -110,8 +73,8 @@ int cmd_size(int argc, char** argv)
 		socket, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev != NULL);
 
-	bufferevent_setcb(bev, size_read_handler, NULL,
-		size_event_handler, (void*)base);
+	bufferevent_setcb(bev, client_read_handler, NULL,
+		client_event_handler, (void*)base);
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 
