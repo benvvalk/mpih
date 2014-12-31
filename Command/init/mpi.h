@@ -15,7 +15,6 @@ namespace mpi {
 }
 
 // forward declarations
-
 static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds);
@@ -264,7 +263,6 @@ static inline void update_mpi_status(
 		if (completed) {
 			// copy recv'd data from MPI buffer to Unix socket
 			assert(connection.chunk_size > 0);
-
 			evbuffer_add(output, connection.chunk_buffer,
 				connection.chunk_size);
 
