@@ -161,7 +161,7 @@ static inline void mpi_recv_chunk(Connection& connection)
 		printf("receiving message from rank %d (%d bytes)\n",
 				connection.rank, connection.chunk_size);
 
-	MPI_Isend((void*)connection.chunk_buffer, connection.chunk_size,
+	MPI_Irecv((void*)connection.chunk_buffer, connection.chunk_size,
 			MPI_BYTE, connection.rank, MPI_DEFAULT_TAG,
 			MPI_COMM_WORLD, &connection.chunk_request_id);
 
@@ -240,6 +240,9 @@ static inline void update_mpi_status(
 		}
 		if (completed) {
 			if (connection.chunk_size == 0) {
+				if (opt::verbose >= 3)
+					printf("received EOF from rank %d\n",
+						connection.rank);
 				connection.state = FLUSHING_SOCKET;
 				if (evbuffer_get_length(output) == 0)
 					close_connection(connection);
@@ -261,13 +264,16 @@ static inline void update_mpi_status(
 		if (completed) {
 			// copy recv'd data from MPI buffer to Unix socket
 			assert(connection.chunk_size > 0);
+
 			evbuffer_add(output, connection.chunk_buffer,
 				connection.chunk_size);
+
 			// clear MPI buffer and other state
 			connection.clear_mpi_state();
 			// post receive for size of next chunk
 			connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
 			mpi_recv_chunk_size(connection);
+
 			return;
 		}
 	} else if (connection.state == FLUSHING_SOCKET) {
