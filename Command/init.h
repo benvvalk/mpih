@@ -11,6 +11,7 @@
 #include "Command/init/event_handlers.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
+#include "Env/env.h"
 #include <mpi.h>
 #include <getopt.h>
 #include <iostream>
@@ -19,24 +20,27 @@
 #include <algorithm>
 
 static const char INIT_USAGE_MESSAGE[] =
-"Usage: mpi init <socket_path>\n"
+"Usage: mpi [--socket <path>] init &\n"
 "\n"
 "Description:\n"
 "\n"
-"   Initialize the current MPI rank and start a daemon\n"
-"   that will listen for commands issued from the\n"
-"   shell (e.g. 'mpi send').\n"
+"   Start a daemon that will listen for MPI commands\n"
+"   on the Unix socket file at <path>. <path> must be\n"
+"   specified using either the MPIH_SOCKET environment\n"
+"   variable or the --socket option, with --socket\n"
+"   taking precedence. <path> does not need to\n"
+"   exist prior to running 'mpi init'. If <path> does\n"
+"   exist, the file will be deleted and recreated\n"
+"   by the daemon.\n"
 "\n"
-"   Communication between clients (mpi commands) and\n"
-"   the daemon occurs over a Unix domain socket located at\n"
-"   <socket_path>.  <socket_path> does not need to\n"
-"   exist prior to running 'mpi init'. If <socket_path>\n"
-"   does exist the daemon will delete the file and recreate\n"
-"   it.\n"
+"   The normal way to issue commands to the daemon is\n"
+"   to run other 'mpih' commands (e.g. 'mpih send') with\n"
+"   the same --socket option (or MPIH_SOCKET value).\n"
 "\n"
 "Options:\n"
 "\n"
-"   (none)\n";
+"   -s,--socket PATH   communicate over Unix socket\n"
+"                      at PATH\n";
 
 static const char init_shortopts[] = "hv";
 
@@ -97,10 +101,6 @@ static inline int cmd_init(int argc, char** argv)
 		}
 	}
 
-	// make sure a socket path is given (and nothing else)
-	if (argc - optind != 1)
-		die(INIT_USAGE_MESSAGE);
-
 	// use line buffering on stdout/stderr
 	setvbuf(stdout, NULL, _IOLBF, 0);
 	setvbuf(stderr, NULL, _IOLBF, 0);
@@ -111,7 +111,7 @@ static inline int cmd_init(int argc, char** argv)
 	MPI_Comm_rank(MPI_COMM_WORLD, &mpi::rank);
 
 	// start connection handling loop on Unix socket
-	server_loop(argv[optind]);
+	server_loop(opt::socketPath.c_str());
 
 	// shutdown MPI
 	MPI_Finalize();

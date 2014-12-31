@@ -53,15 +53,11 @@ int cmd_rank(int argc, char** argv)
 		}
 	}
 
-	// make sure a socket path is given (and nothing else)
-	if (argc - optind != 1)
-		die(RANK_USAGE_MESSAGE);
-
 	if (opt::verbose)
 		std::cerr << "Connecting to 'mpih init' process..."
 			<< std::endl;
 
-	int socket = UnixSocket::connect(argv[optind]);
+	int socket = UnixSocket::connect(opt::socketPath.c_str());
 
 	if (opt::verbose)
 		std::cerr << "Connected." << std::endl;
