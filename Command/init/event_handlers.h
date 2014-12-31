@@ -72,13 +72,17 @@ process_next_header(Connection& connection)
 	if (command.empty())
 		return;
 
+	struct evbuffer* output = bufferevent_get_output(bev);
+	assert(output != NULL);
+
 	if (command == "RANK") {
 
-		assert(bev != NULL);
-		struct evbuffer* output = bufferevent_get_output(bev);
-		assert(output != NULL);
 		evbuffer_add_printf(output, "%d\n", mpi::rank);
 
+	} else if (command == "SIZE") {
+		
+		evbuffer_add_printf(output, "%d\n", mpi::numProc);		
+		
 	} else if (command == "SEND") {
 
 		int rank;
