@@ -126,6 +126,25 @@ process_next_header(Connection& connection)
 }
 
 static inline void
+init_write_handler(struct bufferevent *unused, void *arg)
+{
+	assert(arg != NULL);
+	Connection& connection = *(Connection*)arg;
+
+	// for consistency, always use bev from connection
+	struct bufferevent* bev = connection.bev;
+	assert(bev != NULL);
+
+	struct evbuffer* output = bufferevent_get_output(bev);
+	assert(output != NULL);
+
+	if (connection.state == FLUSHING_SOCKET) {
+		assert(evbuffer_get_length(output) == 0);
+		close_connection(connection);
+	}
+}
+
+static inline void
 init_read_handler(struct bufferevent *bev, void *arg)
 {
 	assert(arg != NULL);
@@ -185,8 +204,9 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 	connection.socket = fd;
 
 	// set callbacks for buffer input/output
-	bufferevent_setcb(bev, init_read_handler, NULL,
-		init_event_handler, &connection);
+	bufferevent_setcb(bev, init_read_handler,
+		init_write_handler, init_event_handler,
+		&connection);
 	// set low/high watermarks for invoking callbacks
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
 	// enable callbacks
