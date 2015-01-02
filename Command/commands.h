@@ -4,6 +4,7 @@
 #include "Command/help.h"
 #include "Command/init.h"
 #include "Command/rank.h"
+#include "Command/send.h"
 #include "Command/size.h"
 #include "Command/version.h"
 #include "Macro/Array.h"
@@ -22,6 +23,7 @@ static struct cmd_struct cmd_map[] = {
 	{ "-h", &cmd_help },
 	{ "init", &cmd_init },
 	{ "rank", &cmd_rank },
+	{ "send", &cmd_send },
 	{ "size", &cmd_size },
 	{ "--version", &cmd_version },
 	{ "version", &cmd_version }
