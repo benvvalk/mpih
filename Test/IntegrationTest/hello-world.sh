@@ -33,6 +33,3 @@ echo "rank $my_rank received '$msg' from rank $src_rank"
 
 # shutdown daemon
 mpih finalize
-
-# wait for daemon to shut down
-sleep 2

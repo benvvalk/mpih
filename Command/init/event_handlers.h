@@ -127,7 +127,6 @@ process_next_header(Connection& connection)
 		if (opt::verbose)
 			printf("Shutting down daemon...\n");
 
-		close_connection(connection);
 		event_base_loopexit(base, NULL);
 
 	} else {

@@ -38,18 +38,6 @@ static const struct option finalize_longopts[] = {
 	{ NULL, 0, NULL, 0 }
 };
 
-static inline void finalize_write_handler(
-	struct bufferevent* bev, void* arg)
-{
-	assert(bev != NULL);
-
-	struct evbuffer* output = bufferevent_get_output(bev);
-	assert(output != NULL);
-
-	assert(evbuffer_get_length(output) == 0);
-	bufferevent_free(bev);
-}
-
 int cmd_finalize(int argc, char** argv)
 {
 	for (int c; (c = getopt_long(argc, argv,
@@ -88,7 +76,7 @@ int cmd_finalize(int argc, char** argv)
 		socket, BEV_OPT_CLOSE_ON_FREE);
 	assert(bev != NULL);
 
-	bufferevent_setcb(bev, NULL, finalize_write_handler,
+	bufferevent_setcb(bev, NULL, NULL,
 		client_event_handler, NULL);
 	bufferevent_setwatermark(bev, EV_READ, 0, 0);
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
