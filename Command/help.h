@@ -1,20 +1,19 @@
 #ifndef _HELP_H_
 #define _HELP_H_
 
+#include "config.h"
 #include <getopt.h>
 #include <iostream>
 
 // forward declaration to break cyclic dependency
 int invoke_cmd(const char* cmd, int argc, char** argv);
 
-#define PROGRAM "mpih"
-
 static const char USAGE_MESSAGE[] =
-"Usage: " PROGRAM " [--socket <path>] [--help] <command> [<args>]\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] [--help] <command> [<args>]\n"
 "\n"
 "Description:\n"
 "\n"
-"   '" PROGRAM "' stands for 'MPI harness'. It provides\n"
+"   '" PROGRAM_NAME "' stands for 'MPI harness'. It provides\n"
 "   a command-line interface for writing MPI-based shell\n"
 "   scripts.\n"
 "\n"
@@ -28,7 +27,7 @@ static const char USAGE_MESSAGE[] =
 "   send      stream data to another MPI rank\n"
 "   size      print number of ranks in current MPI job\n"
 "\n"
-"See '" PROGRAM " help <command>' for help on specific commands.\n";
+"See '" PROGRAM_NAME " help <command>' for help on specific commands.\n";
 
 int cmd_help(int argc, char** argv)
 {

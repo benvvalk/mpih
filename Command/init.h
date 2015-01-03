@@ -5,6 +5,7 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
+#include "config.h"
 #include "Options/CommonOptions.h"
 #include "Command/init/Connection.h"
 #include "Command/init/mpi.h"
@@ -20,7 +21,7 @@
 #include <algorithm>
 
 static const char INIT_USAGE_MESSAGE[] =
-"Usage: mpi [--socket <path>] init &\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] init &\n"
 "\n"
 "Description:\n"
 "\n"

@@ -13,7 +13,7 @@
 #include <event2/bufferevent.h>
 
 static const char SIZE_USAGE_MESSAGE[] =
-"Usage: mpi size <socket_path>\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] size\n"
 "\n"
 "Description:\n"
 "\n"
@@ -21,7 +21,8 @@ static const char SIZE_USAGE_MESSAGE[] =
 "\n"
 "Options:\n"
 "\n"
-"   (none)\n";
+"   -s,--socket PATH   communicate over Unix socket\n"
+"                      at PATH\n";
 
 static const char size_shortopts[] = "hv";
 

@@ -1,5 +1,7 @@
 #ifndef _MPIH_FINALIZE_H_
 #define _MPIH_FINALIZE_H_
+
+#include "config.h"
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
@@ -12,7 +14,7 @@
 #include <event2/bufferevent.h>
 
 static const char FINALIZE_USAGE_MESSAGE[] =
-"Usage: mpi [--socket <path>] finalize\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] finalize\n"
 "\n"
 "Description:\n"
 "\n"

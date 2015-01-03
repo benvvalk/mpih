@@ -5,7 +5,7 @@
 #include <iostream>
 
 static const char VERSION_MESSAGE[] =
-"mpiglue " MPIGLUE_VERSION "\n"
+PROGRAM_NAME " " PROGRAM_VERSION "\n"
 "Written by Ben Vandervalk.\n";
 
 int cmd_version(int argc, char** argv)

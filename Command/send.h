@@ -1,6 +1,7 @@
 #ifndef _SEND_H_
 #define _SEND_H_
 
+#include "config.h"
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
@@ -15,7 +16,7 @@
 #include <fcntl.h>
 
 static const char SEND_USAGE_MESSAGE[] =
-"Usage: mpi [--socket <path>] send <rank> [file1]...\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] send <rank> [file1]...\n"
 "\n"
 "Description:\n"
 "\n"

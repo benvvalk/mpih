@@ -1,6 +1,7 @@
 #ifndef _RECV_H_
 #define _RECV_H_
 
+#include "config.h"
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
@@ -15,7 +16,7 @@
 #include <fcntl.h>
 
 static const char RECV_USAGE_MESSAGE[] =
-"Usage: mpi [--socket <path>] recv <rank> [file1]...\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] recv <rank> [file1]...\n"
 "\n"
 "Description:\n"
 "\n"

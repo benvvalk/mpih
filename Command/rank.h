@@ -1,6 +1,7 @@
 #ifndef _RANK_H_
 #define _RANK_H_
 
+#include "config.h"
 #include "Options/CommonOptions.h"
 #include "IO/IOUtil.h"
 #include "IO/SocketUtil.h"
@@ -13,7 +14,7 @@
 #include <event2/bufferevent.h>
 
 static const char RANK_USAGE_MESSAGE[] =
-"Usage: mpi rank <socket_path>\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] rank\n"
 "\n"
 "Description:\n"
 "\n"
@@ -21,7 +22,8 @@ static const char RANK_USAGE_MESSAGE[] =
 "\n"
 "Options:\n"
 "\n"
-"   (none)\n";
+"   -s,--socket PATH   communicate over Unix socket\n"
+"                      at PATH\n";
 
 static const char rank_shortopts[] = "hv";
 

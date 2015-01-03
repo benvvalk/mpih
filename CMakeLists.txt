@@ -4,8 +4,9 @@ cmake_minimum_required (VERSION 2.6)
 # project name/version
 #------------------------------------------------------------
 
-project (mpiglue)
-set (MPIGLUE_VERSION 0.1)
+project (mpih)
+set (PROGRAM_NAME mpih)
+set (PROGRAM_VERSION 0.1)
 
 #------------------------------------------------------------
 # dependencies
@@ -50,11 +51,11 @@ configure_file(
 # main executable
 #------------------------------------------------------------
 
-add_executable (mpi mpi.cc)
-target_link_libraries(mpi "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
+add_executable (mpih mpih.cc)
+target_link_libraries(mpih "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
 
 #------------------------------------------------------------
 # install targets
 #------------------------------------------------------------
 
-install (TARGETS mpi DESTINATION bin)
+install (TARGETS mpih DESTINATION bin)
