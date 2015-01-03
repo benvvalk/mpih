@@ -151,4 +151,13 @@ close_connection(Connection& connection)
 	g_connections.erase(it);
 }
 
+static inline void
+close_all_connections()
+{
+	ConnectionList::iterator it = g_connections.begin();
+	for (; it != g_connections.end(); ++it)
+		it->close();
+	g_connections.clear();
+}
+
 #endif

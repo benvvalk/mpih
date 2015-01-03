@@ -119,6 +119,17 @@ process_next_header(Connection& connection)
 
 		mpi_recv_chunk_size(connection);
 
+	} else if (command == "FINALIZE") {
+
+		struct event_base* base = bufferevent_get_base(bev);
+		assert(base != NULL);
+
+		if (opt::verbose)
+			printf("Shutting down daemon...\n");
+
+		close_connection(connection);
+		event_base_loopexit(base, NULL);
+
 	} else {
 		fprintf(stderr, "error: unrecognized header command '%s'\n",
 			command.c_str());

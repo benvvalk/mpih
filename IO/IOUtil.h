@@ -3,6 +3,7 @@
 
 #include <cstring>
 #include <fstream>
+#include <iostream>
 
 /** Print an error message and exit if stream is not good. */
 static inline void assert_good(const std::ios& stream,

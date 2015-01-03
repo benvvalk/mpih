@@ -1,6 +1,7 @@
 #ifndef _COMMANDS_H_
 #define _COMMANDS_H_
 
+#include "Command/finalize.h"
 #include "Command/help.h"
 #include "Command/init.h"
 #include "Command/rank.h"
@@ -19,6 +20,7 @@ struct cmd_struct {
 };
 
 static struct cmd_struct cmd_map[] = {
+	{ "finalize", &cmd_finalize },
 	{ "help", &cmd_help },
 	{ "--help", &cmd_help },
 	{ "-h", &cmd_help },

@@ -1,6 +1,11 @@
 #ifndef _CLIENT_EVENT_HANDLERS_H_
 #define _CLIENT_EVENT_HANDLERS_H_
 
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+#include <cassert>
+
 static inline void
 client_read_handler(struct bufferevent *bev, void *arg)
 {
