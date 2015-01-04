@@ -1,12 +1,9 @@
 #ifndef _INIT_H_
 #define _INIT_H_
 
-#include <event2/event.h>
-#include <event2/buffer.h>
-#include <event2/bufferevent.h>
-
 #include "config.h"
 #include "Options/CommonOptions.h"
+#include "Command/init/log.h"
 #include "Command/init/Connection.h"
 #include "Command/init/mpi.h"
 #include "Command/init/event_handlers.h"
@@ -19,6 +16,11 @@
 #include <sstream>
 #include <cassert>
 #include <algorithm>
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
+#include <signal.h>
+#include <unistd.h>
 
 static const char INIT_USAGE_MESSAGE[] =
 "Usage: " PROGRAM_NAME " [--socket <path>] init &\n"
@@ -40,16 +42,76 @@ static const char INIT_USAGE_MESSAGE[] =
 "\n"
 "Options:\n"
 "\n"
+"   -f,--foreground    run daemon in the foreground\n"
+"   -l,--log PATH      log file [/dev/null]\n"
 "   -s,--socket PATH   communicate over Unix socket\n"
 "                      at PATH\n";
 
-static const char init_shortopts[] = "hv";
+namespace opt {
+	static int foreground;
+}
+
+static const char init_shortopts[] = "fhl:v";
 
 static const struct option init_longopts[] = {
+	{ "foreground", no_argument, NULL, 'f' },
 	{ "help",     no_argument, NULL, 'h' },
+	{ "log",      required_argument, NULL, 'l' },
 	{ "verbose",  no_argument, NULL, 'v' },
 	{ NULL, 0, NULL, 0 }
 };
+
+/**
+ * Run the current process in the background.
+ *
+ * Note: This method does not perform all of
+ * the typical steps for starting a daemon,
+ * such as calling setsid(), forking twice,
+ * or changing to the root ("/") directory.
+ * This is intentional.
+ *
+ * In the case of 'mpi init', the
+ * daemon to be killed if the shell script
+ * aborted prematurely, and so I leave the
+ * process group and the controlling terminal
+ * of the child process unaltered.
+ */
+static inline void run_in_background()
+{
+	pid_t pid, sid;
+
+	/*
+	 * If a background process
+	 * accidentally writes to STDOUT,
+	 * it may be sent a SIGTTOU
+	 * signal. The default behaviour is
+	 * when receiving SIGTTOU is to supsend
+	 * the process, which can cause
+	 * confusion.
+	 */
+
+#ifdef SIGTTOU
+	signal(SIGTTOU, SIG_IGN);
+#endif
+#ifdef SIGTTIN
+	signal(SIGTTIN, SIG_IGN);
+#endif
+#ifdef SIGTSTP
+	signal(SIGTSTP, SIG_IGN);
+#endif
+
+	pid = fork();
+	if (pid < 0)
+		exit(EXIT_FAILURE);
+
+	// exit parent process
+	if (pid > 0)
+		exit(EXIT_SUCCESS);
+
+	// close all open file descriptors
+	for (int i=getdtablesize(); i >= 0; --i)
+		close(i);
+}
 
 static inline void server_loop(const char* socketPath)
 {
@@ -69,7 +131,7 @@ static inline void server_loop(const char* socketPath)
 	assert(result == 0);
 
 	if (opt::verbose)
-		printf("Listening for connections...\n");
+		fprintf(g_log, "Listening for connections...\n");
 
 	// start libevent loop
 	event_base_dispatch(base);
@@ -88,9 +150,15 @@ static inline int cmd_init(int argc, char** argv)
 		switch (c) {
 		  case '?':
 			die(INIT_USAGE_MESSAGE);
+		  case 'f':
+			opt::foreground = 1;
+			break;
 		  case 'h':
 			std::cout << INIT_USAGE_MESSAGE;
 			return EXIT_SUCCESS;
+		  case 'l':
+			arg >> opt::logPath;
+			break;
 		  case 'v':
 			opt::verbose++;
 			break;
@@ -102,9 +170,18 @@ static inline int cmd_init(int argc, char** argv)
 		}
 	}
 
-	// use line buffering on stdout/stderr
-	setvbuf(stdout, NULL, _IOLBF, 0);
-	setvbuf(stderr, NULL, _IOLBF, 0);
+	if (opt::logPath == "-" && !opt::foreground) {
+		std::cerr << "error: cannot log to STDOUT ('-') "
+			" unless --foreground option is used."
+			<< std::endl;
+		die(INIT_USAGE_MESSAGE);
+	}
+
+	if (opt::foreground && opt::logPath.empty())
+		opt::logPath = "-";
+
+	if (!opt::foreground)
+		run_in_background();
 
 	// initialize MPI
 	MPI_Init(&argc, &argv);
@@ -112,7 +189,9 @@ static inline int cmd_init(int argc, char** argv)
 	MPI_Comm_rank(MPI_COMM_WORLD, &mpi::rank);
 
 	// start connection handling loop on Unix socket
+	init_log();
 	server_loop(opt::socketPath.c_str());
+	close_log();
 
 	// shutdown MPI
 	MPI_Finalize();

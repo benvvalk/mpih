@@ -1,6 +1,7 @@
 #ifndef _EVENT_HANDLERS_H_
 #define _EVENT_HANDLERS_H_
 
+#include "Command/init/log.h"
 #include "Command/init/mpi.h"
 #include "IO/SocketUtil.h"
 #include <event2/event.h>
@@ -37,7 +38,7 @@ static inline char* read_header(Connection& connection)
 	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
 
 	if (line == NULL && len > MAX_HEADER_SIZE) {
-		fprintf(stderr, "header line exceeded max length "
+		fprintf(g_log, "header line exceeded max length "
 				"(%d bytes)\n", MAX_HEADER_SIZE);
 		close_connection(connection);
 	}
@@ -61,7 +62,7 @@ process_next_header(Connection& connection)
 		return;
 
 	if (opt::verbose >= 2)
-		printf("Received header line: '%s'\n", header);
+		fprintf(g_log, "Received header line: '%s'\n", header);
 
 	std::stringstream ss(header);
 	free(header);
@@ -88,7 +89,7 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(stderr, "error: malformed SEND header, "
+			fprintf(g_log, "error: malformed SEND header, "
 				"expected 'SEND <RANK>'\n");
 			return;
 		}
@@ -108,7 +109,7 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(stderr, "error: malformed RECV header, "
+			fprintf(g_log, "error: malformed RECV header, "
 				"expected 'RECV <RANK>'\n");
 			return;
 		}
@@ -125,12 +126,12 @@ process_next_header(Connection& connection)
 		assert(base != NULL);
 
 		if (opt::verbose)
-			printf("Shutting down daemon...\n");
+			fprintf(g_log, "Shutting down daemon...\n");
 
 		event_base_loopexit(base, NULL);
 
 	} else {
-		fprintf(stderr, "error: unrecognized header command '%s'\n",
+		fprintf(g_log, "error: unrecognized header command '%s'\n",
 			command.c_str());
 	}
 }
@@ -200,7 +201,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 	// connect to client (or die)
 	evutil_socket_t fd = UnixSocket::accept(listener, false);
 	if (opt::verbose)
-		printf("Connected to client.\n");
+		fprintf(g_log, "Connected to client.\n");
 
 
 	// create buffer and associate with new connection

@@ -9,7 +9,7 @@ tmpdir=$(mktemp -d)
 export MPIH_SOCKET="$tmpdir/mpih_socket"
 
 # Start daemon that executes MPI routines
-mpih init &
+mpih init
 
 # Wait for daemon to start
 sleep 2
