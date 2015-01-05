@@ -96,7 +96,7 @@ rank 0 received: 'Hello, from rank 9!'
 Compile and install to your ``$HOME/bin`` (requires git and CMake):
 
 ```
-$ git clone git@bitbucket.org:benvvalk/mpih.git
+$ git clone git@github.com:benvvalk/mpih.git
 $ mkdir mpih/build
 $ cd mpih/build
 $ cmake -DCMAKE_INSTALL_PREFIX:PATH=$HOME ..
