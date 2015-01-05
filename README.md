@@ -30,7 +30,7 @@ See 'mpih help <command>' for help on specific commands.
 # Synopsis
 
 hello-world.sh:
-```
+```bash
 #!/bin/bash
 
 set -eu -o pipefail
