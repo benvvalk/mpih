@@ -1,3 +1,7 @@
+# Warning!
+
+This project is currently in a non-working state.  I have observed that the code hangs when doing when doing send/recv's greater than ~1k in size.
+
 # Description
 
 ```
