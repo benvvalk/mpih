@@ -199,17 +199,12 @@ static inline void update_mpi_status(
 			log_f(connection, "chunk size %d to rank %d: %s",
 				connection.chunk_size, connection.rank,
 				completed ? "sent successfully" : "in flight");
-			if (completed) {
-				MPI_Get_count(&status, MPI_INT, &count);
-				assert(count == 1);
-			}
 		}
 		if (completed) {
 			MPI_Test(&connection.chunk_request_id, &completed, &status);
 			if (opt::verbose >= 3) {
-				MPI_Get_count(&status, MPI_BYTE, &count);
 				log_f(connection, "chunk to rank %d (%d MPI_BYTE): %s",
-					connection.rank, count,
+					connection.rank, connection.chunk_size,
 					completed ? "sent successfully" : "in flight");
 			}
 		}
@@ -223,10 +218,9 @@ static inline void update_mpi_status(
 	} else if (connection.state == MPI_SENDING_EOF) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
-			MPI_Get_count(&status, MPI_INT, &count);
-			log_f(connection, "EOF to rank %d (%d MPI_INT): %s",
-				connection.rank, count,
-				completed ? "sent successfully" : "in flight");
+			log_f(connection, "EOF to rank %d (%d MPI_INT) %s",
+					connection.rank, 1,
+					completed ? "sent successfully" : "in flight");
 		}
 		if (completed) {
 			log_f(connection, "closing connection from mpi handler");
@@ -236,10 +230,15 @@ static inline void update_mpi_status(
 	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
-			MPI_Get_count(&status, MPI_INT, &count);
-			log_f(connection, "chunk size from rank %d (%d MPI_INT): %s",
-				connection.rank, count,
-				completed ? "received successfully" : "in flight");
+			if (completed) {
+				MPI_Get_count(&status, MPI_INT, &count);
+				assert(count == 1);
+				log_f(connection, "chunk size from rank %d (%d MPI_INT) "
+						"received successfully", connection.rank, count);
+			} else {
+				log_f(connection, "waiting for chunk size from rank %d (%d MPI_INT)",
+						connection.rank, 1);
+			}
 		}
 		if (completed) {
 			if (connection.chunk_size == 0) {
@@ -257,10 +256,15 @@ static inline void update_mpi_status(
 	} else if (connection.state == MPI_RECVING_CHUNK) {
 		MPI_Test(&connection.chunk_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
-			MPI_Get_count(&status, MPI_BYTE, &count);
-			log_f(connection, "chunk from rank %d (%d MPI_BYTE): %s",
-				connection.rank, count,
-				completed ? "received successfully" : "in flight");
+			if (completed) {
+				MPI_Get_count(&status, MPI_BYTE, &count);
+				assert(count == connection.chunk_size);
+				log_f(connection, "chunk from rank %d (%d MPI_BYTE) "
+					"received succesfully", connection.rank, count);
+			} else {
+				log_f(connection, "waiting for chunk from rank %d (%d MPI_BYTE)",
+					connection.rank, connection.chunk_size);
+			}
 		}
 		if (completed) {
 			// copy recv'd data from MPI buffer to Unix socket
