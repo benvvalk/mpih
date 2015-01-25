@@ -34,7 +34,7 @@ static inline void mpi_send_eof(Connection& connection)
 	connection.chunk_size = 0;
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "sending EOF to rank %d\n", connection.rank);
+		log_f(connection, "sending EOF to rank %d", connection.rank);
 
 	// send chunk size of zero to indicate EOF
 	MPI_Isend((void*)&connection.chunk_size, 1, MPI_INT,
@@ -74,7 +74,7 @@ static inline void mpi_send_chunk(Connection& connection)
 	assert(bytesRemoved == connection.chunk_size);
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "sending chunk size (%d bytes) to rank %d\n",
+		log_f(connection, "sending chunk size (%d bytes) to rank %d",
 			connection.chunk_size, connection.rank);
 
 	// send chunk size in advance of data chunk
@@ -83,7 +83,7 @@ static inline void mpi_send_chunk(Connection& connection)
 		&connection.chunk_size_request_id);
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "sending chunk to rank %d (%d bytes)\n",
+		log_f(connection, "sending chunk to rank %d (%d bytes)",
 				connection.rank, connection.chunk_size);
 
 	// send message body
@@ -131,7 +131,7 @@ static inline void mpi_recv_chunk_size(Connection& connection)
 	connection.state = MPI_RECVING_CHUNK_SIZE;
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "receiving chunk size from rank %d\n",
+		log_f(connection, "receiving chunk size from rank %d",
 			connection.rank);
 
 	// send message size in advance of message body
@@ -157,7 +157,7 @@ static inline void mpi_recv_chunk(Connection& connection)
 	assert(connection.chunk_buffer != NULL);
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "receiving message from rank %d (%d bytes)\n",
+		log_f(connection, "receiving message from rank %d (%d bytes)",
 				connection.rank, connection.chunk_size);
 
 	MPI_Irecv((void*)connection.chunk_buffer, connection.chunk_size,
@@ -196,16 +196,19 @@ static inline void update_mpi_status(
 	if (connection.state == MPI_SENDING_CHUNK) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
-			MPI_Get_count(&status, MPI_INT, &count);
-			fprintf(g_log, "chunk size %d to rank %d (%d MPI_INT): %s\n",
-				connection.chunk_size, connection.rank, count,
+			log_f(connection, "chunk size %d to rank %d: %s",
+				connection.chunk_size, connection.rank,
 				completed ? "sent successfully" : "in flight");
+			if (completed) {
+				MPI_Get_count(&status, MPI_INT, &count);
+				assert(count == 1);
+			}
 		}
 		if (completed) {
 			MPI_Test(&connection.chunk_request_id, &completed, &status);
 			if (opt::verbose >= 3) {
 				MPI_Get_count(&status, MPI_BYTE, &count);
-				fprintf(g_log, "chunk to rank %d (%d MPI_BYTE): %s\n",
+				log_f(connection, "chunk to rank %d (%d MPI_BYTE): %s",
 					connection.rank, count,
 					completed ? "sent successfully" : "in flight");
 			}
@@ -221,11 +224,12 @@ static inline void update_mpi_status(
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
 			MPI_Get_count(&status, MPI_INT, &count);
-			fprintf(g_log, "EOF to rank %d (%d MPI_INT): %s\n",
+			log_f(connection, "EOF to rank %d (%d MPI_INT): %s",
 				connection.rank, count,
 				completed ? "sent successfully" : "in flight");
 		}
 		if (completed) {
+			log_f(connection, "closing connection from mpi handler");
 			close_connection(connection);
 			return;
 		}
@@ -233,14 +237,14 @@ static inline void update_mpi_status(
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
 			MPI_Get_count(&status, MPI_INT, &count);
-			fprintf(g_log, "chunk size from rank %d (%d MPI_INT): %s\n",
+			log_f(connection, "chunk size from rank %d (%d MPI_INT): %s",
 				connection.rank, count,
 				completed ? "received successfully" : "in flight");
 		}
 		if (completed) {
 			if (connection.chunk_size == 0) {
 				if (opt::verbose >= 3)
-					fprintf(g_log, "received EOF from rank %d\n",
+					log_f(connection, "received EOF from rank %d",
 						connection.rank);
 				connection.state = FLUSHING_SOCKET;
 			}
@@ -254,7 +258,7 @@ static inline void update_mpi_status(
 		MPI_Test(&connection.chunk_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
 			MPI_Get_count(&status, MPI_BYTE, &count);
-			fprintf(g_log, "chunk from rank %d (%d MPI_BYTE): %s\n",
+			log_f(connection, "chunk from rank %d (%d MPI_BYTE): %s",
 				connection.rank, count,
 				completed ? "received successfully" : "in flight");
 		}

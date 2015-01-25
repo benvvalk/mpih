@@ -1,10 +1,12 @@
 #ifndef _CONNECTION_H_
 #define _CONNECTION_H_
 
+#include "Command/init/log.h"
 #include <mpi.h>
 #include <vector>
 #include <algorithm>
 #include <cassert>
+#include <cstdarg>
 
 enum ConnectionState {
 	READING_HEADER=0,
@@ -104,6 +106,11 @@ struct Connection {
 		printf("\tchunk_size: %d\n", chunk_size);
 	}
 
+	size_t id()
+	{
+		return connection_id;
+	}
+
 	bool mpi_ops_pending()
 	{
 		switch(state)
@@ -132,22 +139,28 @@ private:
 
 };
 
+// forward declaration
+static inline void log_f(Connection& connection, const char* fmt, ...);
+
 size_t Connection::next_connection_id = 0;
 
-typedef std::vector<Connection> ConnectionList;
+typedef std::vector<Connection*> ConnectionList;
 static ConnectionList g_connections;
 
 static inline void
 close_connection(Connection& connection)
 {
+	if (opt::verbose)
+		log_f(connection, "closing connection");
+
 	connection.close();
 
 	ConnectionList::iterator it = std::find(
 		g_connections.begin(), g_connections.end(),
-		connection);
+		&connection);
 
 	assert(it != g_connections.end());
-
+	delete *it;
 	g_connections.erase(it);
 }
 
@@ -155,8 +168,10 @@ static inline void
 close_all_connections()
 {
 	ConnectionList::iterator it = g_connections.begin();
-	for (; it != g_connections.end(); ++it)
-		it->close();
+	for (; it != g_connections.end(); ++it) {
+		(*it)->close();
+		delete *it;
+	}
 	g_connections.clear();
 }
 

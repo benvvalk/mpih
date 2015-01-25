@@ -38,8 +38,8 @@ static inline char* read_header(Connection& connection)
 	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
 
 	if (line == NULL && len > MAX_HEADER_SIZE) {
-		fprintf(g_log, "header line exceeded max length "
-				"(%d bytes)\n", MAX_HEADER_SIZE);
+		log_f(connection, "header line exceeded max length "
+				"(%d bytes)", MAX_HEADER_SIZE);
 		close_connection(connection);
 	}
 
@@ -62,7 +62,7 @@ process_next_header(Connection& connection)
 		return;
 
 	if (opt::verbose >= 2)
-		fprintf(g_log, "Received header line: '%s'\n", header);
+		log_f(connection, "received header line '%s'", header);
 
 	std::stringstream ss(header);
 	free(header);
@@ -89,8 +89,8 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(g_log, "error: malformed SEND header, "
-				"expected 'SEND <RANK>'\n");
+			log_f(connection, "error: malformed SEND header, "
+				"expected 'SEND <RANK>'");
 			return;
 		}
 
@@ -109,8 +109,8 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			fprintf(g_log, "error: malformed RECV header, "
-				"expected 'RECV <RANK>'\n");
+			log_f(connection, "error: malformed RECV header, "
+				"expected 'RECV <RANK>'");
 			return;
 		}
 
@@ -126,12 +126,12 @@ process_next_header(Connection& connection)
 		assert(base != NULL);
 
 		if (opt::verbose)
-			fprintf(g_log, "Shutting down daemon...\n");
+			log_f(connection, "Shutting down daemon...");
 
 		event_base_loopexit(base, NULL);
 
 	} else {
-		fprintf(g_log, "error: unrecognized header command '%s'\n",
+		log_f(connection, "error: unrecognized header command '%s'",
 			command.c_str());
 	}
 }
@@ -188,8 +188,10 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 		perror("libevent");
 	}
 
-	if (!connection.mpi_ops_pending())
+	if (!connection.mpi_ops_pending()) {
+		log_f(connection, "closing connection from event handler");
 		close_connection(connection);
+	}
 }
 
 static inline void
@@ -200,24 +202,24 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 
 	// connect to client (or die)
 	evutil_socket_t fd = UnixSocket::accept(listener, false);
-	if (opt::verbose)
-		fprintf(g_log, "Connected to client.\n");
-
 
 	// create buffer and associate with new connection
 	struct bufferevent* bev = bufferevent_socket_new(base, fd, 0);
 	assert(bev != NULL);
 
 	// track state of connection in global map
-	g_connections.push_back(Connection());
-	Connection& connection = g_connections.back();
-	connection.bev = bev;
-	connection.socket = fd;
+	Connection* connection = new Connection();
+	g_connections.push_back(connection);
+	connection->bev = bev;
+	connection->socket = fd;
+
+	if (opt::verbose)
+		log_f(*connection, "opened connection to client");
 
 	// set callbacks for buffer input/output
 	bufferevent_setcb(bev, init_read_handler,
 		init_write_handler, init_event_handler,
-		&connection);
+		connection);
 	// set low/high watermarks for invoking callbacks
 	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
 	// enable callbacks
