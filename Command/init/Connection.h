@@ -17,6 +17,7 @@ enum ConnectionState {
 	MPI_READY_TO_SEND,
 	MPI_SENDING_CHUNK,
 	MPI_SENDING_EOF,
+	MPI_FINALIZE,
 	FLUSHING_SOCKET,
 	CLOSED
 };
@@ -123,8 +124,7 @@ struct Connection {
 			case MPI_SENDING_CHUNK:
 			case MPI_SENDING_EOF:
 				return true;
-			case READING_HEADER:
-			case CLOSED:
+			default:
 				return false;
 		}
 	}
@@ -173,6 +173,17 @@ close_all_connections()
 		delete *it;
 	}
 	g_connections.clear();
+}
+
+static inline bool mpi_ops_pending()
+{
+	ConnectionList::iterator it = g_connections.begin();
+	for (; it != g_connections.end(); ++it) {
+		assert(*it != NULL);
+		if ((*it)->mpi_ops_pending())
+			return true;
+	}
+	return false;
 }
 
 #endif

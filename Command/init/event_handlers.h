@@ -12,6 +12,16 @@
 #define MAX_HEADER_SIZE 256
 #define MAX_BUFFER_SIZE 16384
 
+/**
+ * Becomes true if a client has issued
+ * 'mpih finalize'. If true, the daemon will wait
+ * for all existing data transfers will be completed
+ * and then call MPI_Finalize. If a client tries to
+ * initiate any new transfers (e.g. 'mpih send'),
+ * an error will be raised.
+ */
+static bool g_finalize_pending = false;
+
 static inline void create_timer_event(struct event_base* base,
 	void (*callback_func)(evutil_socket_t, short, void*),
 	void* callback_arg, unsigned seconds)
@@ -60,6 +70,12 @@ process_next_header(Connection& connection)
 	// haven't fully received header line yet
 	if (header == NULL)
 		return;
+
+	if (g_finalize_pending) {
+		log_f(connection, "error, a client has attempted to issue commands "
+			"after 'mpih finalize' has been called!: '%s'", header);
+		exit(EXIT_FAILURE);
+	}
 
 	if (opt::verbose >= 2)
 		log_f(connection, "received header line '%s'", header);
@@ -122,13 +138,15 @@ process_next_header(Connection& connection)
 
 	} else if (command == "FINALIZE") {
 
-		struct event_base* base = bufferevent_get_base(bev);
-		assert(base != NULL);
-
 		if (opt::verbose)
-			log_f(connection, "Shutting down daemon...");
+			log_f(connection, "preparing to shut down daemon...");
 
-		event_base_loopexit(base, NULL);
+		g_finalize_pending = true;
+		connection.state = MPI_FINALIZE;
+
+		evutil_socket_t socket = bufferevent_getfd(bev);
+
+		update_mpi_status(socket, 0, &connection);
 
 	} else {
 		log_f(connection, "error: unrecognized header command '%s'",
@@ -177,6 +195,8 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	Connection& connection = *(Connection*)arg;
 
 	if (error & BEV_EVENT_EOF) {
+		if (opt::verbose >= 2)
+			log_f(connection, "read EOF from client");
 		// client has closed socket
 		connection.eof = true;
 		// we may still have pending MPI sends

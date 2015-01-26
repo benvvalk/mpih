@@ -193,7 +193,15 @@ static inline void update_mpi_status(
 	int count;
 	int completed = 0;
 
-	if (connection.state == MPI_SENDING_CHUNK) {
+	if (connection.state == MPI_FINALIZE) {
+		if (!mpi_ops_pending()) {
+			if (opt::verbose >= 2)
+				log_f(connection, "pending MPI transfers complete. Shutting down!");
+			event_base_loopexit(base, NULL);
+		} else if (opt::verbose >= 3) {
+			log_f(connection, "waiting for pending MPI transfers to complete");
+		}
+	} else if (connection.state == MPI_SENDING_CHUNK) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
 			log_f(connection, "chunk size %d to rank %d: %s",
@@ -211,7 +219,7 @@ static inline void update_mpi_status(
 		if (completed) {
 			connection.clear_mpi_state();
 			connection.state = MPI_READY_TO_SEND;
-			if (bytes_ready > 0)
+			if (connection.eof || bytes_ready > 0)
 				do_next_mpi_send(connection);
 			return;
 		}
@@ -280,6 +288,10 @@ static inline void update_mpi_status(
 
 			return;
 		}
+	} else {
+		log_f(connection, "illegal MPI state (%d) in timer event handler!",
+			connection.state);
+		exit(EXIT_FAILURE);
 	}
 
 	// still waiting for current send/recv to complete;
