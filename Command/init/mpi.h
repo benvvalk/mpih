@@ -254,6 +254,8 @@ static inline void update_mpi_status(
 					log_f(connection, "received EOF from rank %d",
 						connection.rank);
 				connection.state = FLUSHING_SOCKET;
+				if (evbuffer_get_length(output) == 0)
+					close_connection(connection);
 			}
 			else {
 				connection.state = MPI_READY_TO_RECV_CHUNK;
