@@ -14,6 +14,7 @@ static inline void log_f(Connection& connection, const char* fmt, ...);
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 static inline void do_next_mpi_send(Connection& connection);
+static inline void close_connection(Connection& connection);
 
 static inline bool mpi_ops_pending();
 
@@ -272,6 +273,30 @@ struct Connection {
 			chunk_index++;
 			if (eof || bytesReady() > 0)
 				do_next_mpi_send(*this);
+		} else {
+			schedule_event(update_mpi_status, 1000);
+		}
+	}
+
+	void update_mpi_send_eof_state()
+	{
+		assert(state == MPI_SENDING_EOF);
+
+		MPI_Status status;
+		int completed;
+		MPI_Test(&chunk_size_request_id, &completed, &status);
+
+		if (opt::verbose >= 3) {
+			log_f(*this, "%s: EOF to rank %d",
+				completed ? "send completed" : "waiting on send",
+				rank);
+			if (completed)
+				log_f(*this, "sent %lu bytes to rank %d so far",
+					bytes_transferred, rank);
+		}
+		if (completed) {
+			log_f(*this, "closing connection from mpi handler");
+			close_connection(*this);
 		} else {
 			schedule_event(update_mpi_status, 1000);
 		}

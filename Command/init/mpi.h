@@ -203,20 +203,8 @@ static inline void update_mpi_status(
 		connection.update_mpi_send_state();
 		return;
 	} else if (connection.state == MPI_SENDING_EOF) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
-		if (opt::verbose >= 3) {
-			log_f(connection, "%s: EOF to rank %d",
-				completed ? "send completed" : "waiting on send",
-				connection.rank);
-			if (completed)
-				log_f(connection, "sent %lu bytes to rank %d so far",
-					connection.bytes_transferred, connection.rank);
-		}
-		if (completed) {
-			log_f(connection, "closing connection from mpi handler");
-			close_connection(connection);
-			return;
-		}
+		connection.update_mpi_send_eof_state();
+		return;
 	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
