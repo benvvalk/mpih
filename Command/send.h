@@ -49,12 +49,6 @@ send_write_handler(struct bufferevent* bev, void* arg)
 	struct evbuffer* output = bufferevent_get_output(bev);
 	assert(output != NULL);
 
-	if (input_files.empty()) {
-		assert(evbuffer_get_length(output) == 0);
-		event_base_loopexit(base, NULL);
-		return;
-	}
-
 	FILE* file = input_files.back();
 	assert(file != NULL);
 
@@ -74,9 +68,13 @@ send_write_handler(struct bufferevent* bev, void* arg)
 		evbuffer_add(output, buffer, n);
 
 	// EOF
-	if (n < READ_SIZE) {
+	if (n == 0) {
 		fclose(file);
 		input_files.pop_back();
+		if (input_files.empty()) {
+			assert(evbuffer_get_length(output) == 0);
+			event_base_loopexit(base, NULL);
+		}
 	}
 }
 
