@@ -17,7 +17,6 @@ static inline void do_next_mpi_send(Connection& connection);
 static inline void close_connection(Connection& connection);
 static inline void mpi_recv_chunk(Connection& connection);
 static inline void mpi_recv_chunk_size(Connection& connection);
-
 static inline bool mpi_ops_pending();
 
 enum ConnectionState {
