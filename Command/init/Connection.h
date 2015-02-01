@@ -8,6 +8,14 @@
 #include <cassert>
 #include <cstdarg>
 
+// forward declarations
+class Connection;
+static inline void log_f(Connection& connection, const char* fmt, ...);
+static inline void update_mpi_status(
+	evutil_socket_t socket, short event, void* arg);
+
+static inline bool mpi_ops_pending();
+
 enum ConnectionState {
 	READING_HEADER=0,
 	MPI_READY_TO_RECV_CHUNK_SIZE,
@@ -196,6 +204,25 @@ struct Connection {
 		event_add(next_event, &time);
 	}
 
+	void update_mpi_finalize_state()
+	{
+		assert(state == MPI_FINALIZE);
+
+		if (::mpi_ops_pending()) {
+			if (opt::verbose >= 3)
+				log_f(*this, "waiting for pending MPI "
+						"transfers to complete");
+			schedule_event(update_mpi_status, 1000);
+			return;
+		}
+
+		if (opt::verbose >= 2)
+			log_f(*this, "pending MPI transfers complete. "
+					"Shutting down!");
+
+		event_base_loopexit(getBase(), NULL);
+	}
+
 private:
 
 	/** next available connection id */
@@ -205,10 +232,6 @@ private:
 	size_t connection_id;
 
 };
-
-// forward declaration
-static inline void log_f(Connection& connection, const char* fmt, ...);
-
 size_t Connection::next_connection_id = 0;
 
 typedef std::vector<Connection*> ConnectionList;
