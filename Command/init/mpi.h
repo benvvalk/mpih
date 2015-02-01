@@ -170,8 +170,6 @@ static inline void mpi_recv_chunk(Connection& connection)
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg)
 {
-	const unsigned TIMER_SEC = 1;
-
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
@@ -193,11 +191,15 @@ static inline void update_mpi_status(
 	int count;
 	int completed = 0;
 
+	log_f(connection, "entering update_mpi_status with state %s",
+		connection.getState().c_str());
+
 	if (connection.state == MPI_FINALIZE) {
 		if (!mpi_ops_pending()) {
 			if (opt::verbose >= 2)
 				log_f(connection, "pending MPI transfers complete. Shutting down!");
 			event_base_loopexit(base, NULL);
+			return;
 		} else if (opt::verbose >= 3) {
 			log_f(connection, "waiting for pending MPI transfers to complete");
 		}
@@ -297,9 +299,12 @@ static inline void update_mpi_status(
 	}
 
 	// still waiting for current send/recv to complete;
-	// check again in TIMER_SEC
-	create_timer_event(base, update_mpi_status,
-			(void*)&connection, TIMER_SEC);
+	// check again in TIMER_MICROSEC
+
+	const unsigned TIMER_MICROSEC = 1000;
+	log_f(connection, "scheduling update_mpi_status call in "
+		"%lu microseconds", TIMER_MICROSEC);
+	connection.schedule_event(update_mpi_status, TIMER_MICROSEC);
 }
 
 #endif

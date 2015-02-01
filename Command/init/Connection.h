@@ -19,6 +19,7 @@ enum ConnectionState {
 	MPI_SENDING_EOF,
 	MPI_FINALIZE,
 	FLUSHING_SOCKET,
+	DONE,
 	CLOSED
 };
 
@@ -42,6 +43,8 @@ struct Connection {
 	MPI_Request chunk_request_id;
 	/** indicates Unix socket has been closed on remote end. */
 	bool eof;
+	/** timeout event (libevent) */
+	struct event* next_event;
 
 	Connection() :
 		connection_id(next_connection_id),
@@ -51,7 +54,8 @@ struct Connection {
 		bev(NULL),
 		chunk_size(0),
 		chunk_buffer(NULL),
-		eof(false)
+		eof(false),
+		next_event(NULL)
 	{
 		next_connection_id = (next_connection_id + 1) % SIZE_MAX;
 		memset(&chunk_size_request_id, 0, sizeof(MPI_Request));
@@ -127,6 +131,55 @@ struct Connection {
 			default:
 				return false;
 		}
+	}
+
+	std::string getState()
+	{
+		std::string s;
+		switch (state) {
+		case READING_HEADER:
+			s = "READING_HEADER"; break;
+		case MPI_READY_TO_RECV_CHUNK_SIZE:
+			s = "MPI_READY_TO_RECV_CHUNK_SIZE"; break;
+		case MPI_RECVING_CHUNK_SIZE:
+			s = "MPI_RECVING_CHUNK_SIZE"; break;
+		case MPI_READY_TO_RECV_CHUNK:
+			s = "MPI_READY_TO_RECV_CHUNK"; break;
+		case MPI_RECVING_CHUNK:
+			s = "MPI_RECVING_CHUNK"; break;
+		case MPI_READY_TO_SEND:
+			s = "MPI_READY_TO_SEND"; break;
+		case MPI_SENDING_CHUNK:
+			s = "MPI_SENDING_CHUNK"; break;
+		case MPI_SENDING_EOF:
+			s = "MPI_SENDING_EOF"; break;
+		case MPI_FINALIZE:
+			s = "MPI_FINALIZE"; break;
+		case FLUSHING_SOCKET:
+			s = "FLUSHING_SOCKET"; break;
+		case DONE:
+			s = "DONE"; break;
+		case CLOSED:
+			s = "CLOSED"; break;
+		}
+		return s;
+	}
+
+	void schedule_event(event_callback_fn callback,
+		size_t microseconds)
+	{
+		if (next_event != NULL)
+			event_free(next_event);
+
+		assert(bev != NULL);
+		assert(callback != NULL);
+		struct event_base* base = bufferevent_get_base(bev);
+		assert(base != NULL);
+		struct timeval time;
+		time.tv_sec = 0;
+		time.tv_usec = microseconds;
+		next_event = event_new(base, -1, 0, callback, this);
+		event_add(next_event, &time);
 	}
 
 private:

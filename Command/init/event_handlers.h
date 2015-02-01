@@ -22,20 +22,6 @@
  */
 static bool g_finalize_pending = false;
 
-static inline void create_timer_event(struct event_base* base,
-	void (*callback_func)(evutil_socket_t, short, void*),
-	void* callback_arg, unsigned seconds)
-{
-	assert(base != NULL);
-	assert(callback_func != NULL);
-	struct timeval time;
-	time.tv_sec = seconds;
-	time.tv_usec = 0;
-	struct event* ev = event_new(base, -1, 0,
-			callback_func, callback_arg);
-	event_add(ev, &time);
-}
-
 static inline char* read_header(Connection& connection)
 {
 	struct bufferevent* bev = connection.bev;
