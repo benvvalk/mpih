@@ -33,6 +33,35 @@ static const struct option rank_longopts[] = {
 	{ NULL, 0, NULL, 0 }
 };
 
+int query_rank()
+{
+	int socket = UnixSocket::connect(opt::socketPath.c_str());
+
+	if (opt::verbose)
+		std::cerr << "Connected." << std::endl;
+
+	struct event_base* base = event_base_new();
+	assert(base != NULL);
+
+	struct bufferevent* bev = bufferevent_socket_new(base,
+		socket, BEV_OPT_CLOSE_ON_FREE);
+	assert(bev != NULL);
+
+	bufferevent_setcb(bev, integer_read_handler, NULL,
+		client_event_handler, (void*)&mpi::rank);
+	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
+	bufferevent_enable(bev, EV_READ|EV_WRITE);
+
+	// send command to 'mpi init' daemon
+	evbuffer_add_printf(bufferevent_get_output(bev), "RANK\n");
+
+	event_base_dispatch(base);
+	bufferevent_free(bev);
+	event_base_free(base);
+
+	return mpi::rank;
+}
+
 int cmd_rank(int argc, char** argv)
 {
 	for (int c; (c = getopt_long(argc, argv,
@@ -59,29 +88,8 @@ int cmd_rank(int argc, char** argv)
 		std::cerr << "Connecting to 'mpih init' process..."
 			<< std::endl;
 
-	int socket = UnixSocket::connect(opt::socketPath.c_str());
-
-	if (opt::verbose)
-		std::cerr << "Connected." << std::endl;
-
-	struct event_base* base = event_base_new();
-	assert(base != NULL);
-
-	struct bufferevent* bev = bufferevent_socket_new(base,
-		socket, BEV_OPT_CLOSE_ON_FREE);
-	assert(bev != NULL);
-
-	bufferevent_setcb(bev, client_read_handler, NULL,
-		client_event_handler, (void*)base);
-	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
-	bufferevent_enable(bev, EV_READ|EV_WRITE);
-
-	// send command to 'mpi init' daemon
-	evbuffer_add_printf(bufferevent_get_output(bev), "RANK\n");
-
-	event_base_dispatch(base);
-	bufferevent_free(bev);
-	event_base_free(base);
+	int rank = query_rank();
+	printf("%d\n", rank);
 
 	return 0;
 }
