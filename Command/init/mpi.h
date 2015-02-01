@@ -175,24 +175,6 @@ static inline void update_mpi_status(
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
-	struct bufferevent* bev = connection.bev;
-	assert(bev != NULL);
-
-	struct event_base* base = bufferevent_get_base(bev);
-	assert(base != NULL);
-
-	struct evbuffer* input = bufferevent_get_input(bev);
-	assert(input != NULL);
-
-	size_t bytes_ready = evbuffer_get_length(input);
-
-	struct evbuffer* output = bufferevent_get_output(bev);
-	assert(output != NULL);
-
-	MPI_Status status;
-	int count;
-	int completed = 0;
-
 	log_f(connection, "entering update_mpi_status with state %s",
 		connection.getState().c_str());
 
@@ -216,13 +198,6 @@ static inline void update_mpi_status(
 			connection.state);
 		exit(EXIT_FAILURE);
 	}
-
-	// still waiting for current send/recv to complete;
-	// check again in TIMER_MICROSEC
-
-	log_f(connection, "scheduling update_mpi_status call in "
-		"%lu microseconds", TIMER_MICROSEC);
-	connection.schedule_event(update_mpi_status, TIMER_MICROSEC);
 }
 
 #endif
