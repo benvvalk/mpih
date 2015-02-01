@@ -35,8 +35,12 @@ struct Connection {
 	struct bufferevent* bev;
 	/** length of MPI send/recv buffer */
 	int chunk_size;
+	/** chunk number we are currently sending/recving */
+	size_t chunk_index;
 	/** buffer for non-blocking MPI send/recv */
 	char* chunk_buffer;
+	/** bytes successfully transferred for current send/recv */
+	size_t bytes_transferred;
 	/** ID for checking state of asynchronous send/recv */
 	MPI_Request chunk_size_request_id;
 	/** ID for checking state of asynchronous send/recv */
@@ -53,7 +57,9 @@ struct Connection {
 		socket(-1),
 		bev(NULL),
 		chunk_size(0),
+		chunk_index(0),
 		chunk_buffer(NULL),
+		bytes_transferred(0),
 		eof(false),
 		next_event(NULL)
 	{
