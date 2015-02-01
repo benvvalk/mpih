@@ -204,6 +204,12 @@ struct Connection {
 		event_add(next_event, &time);
 	}
 
+	/**
+	 * Callback to update state of 'mpih finalize' command.
+	 * If all pending MPI transfers have completed then
+	 * shutdown the 'mpih init' daemon; if not, setup a
+	 * a callback to check again later.
+	 */
 	void update_mpi_finalize_state()
 	{
 		assert(state == MPI_FINALIZE);
