@@ -293,6 +293,11 @@ struct Connection {
 		}
 	}
 
+	/**
+	 * Callback to update MPI state when sending EOF
+	 * to remote rank. EOF is signaled by a chunk size
+	 * of zero.
+	 */
 	void update_mpi_send_eof_state()
 	{
 		assert(state == MPI_SENDING_EOF);
