@@ -15,6 +15,7 @@ static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 static inline void do_next_mpi_send(Connection& connection);
 static inline void close_connection(Connection& connection);
+static inline void mpi_recv_chunk(Connection& connection);
 
 static inline bool mpi_ops_pending();
 
@@ -189,6 +190,14 @@ struct Connection {
 		return base;
 	}
 
+	size_t bytesQueued()
+	{
+		assert(bev != NULL);
+		struct evbuffer* output = bufferevent_get_output(bev);
+		assert(output != NULL);
+		return evbuffer_get_length(output);
+	}
+
 	size_t bytesReady()
 	{
 		assert(bev != NULL);
@@ -300,6 +309,50 @@ struct Connection {
 		} else {
 			schedule_event(update_mpi_status, 1000);
 		}
+	}
+
+	/**
+	 * Callback to update state when receiving size of
+     * next data chunk.
+	 */
+	void update_mpi_recv_chunk_size_state()
+	{
+		assert(state == MPI_RECVING_CHUNK_SIZE);
+
+		MPI_Status status;
+		int completed;
+		MPI_Test(&chunk_size_request_id, &completed, &status);
+
+		if (opt::verbose >= 3) {
+			log_f(*this, "%s: size of chunk #%lu from rank %d",
+					completed ? "recv completed" : "waiting on recv",
+					chunk_index, rank);
+		}
+
+		if (completed) {
+			chunk_index++;
+			int count;
+			MPI_Get_count(&status, MPI_INT, &count);
+			assert(count == 1);
+			if (chunk_size == 0) {
+				if (opt::verbose >= 3)
+					log_f(*this, "received EOF from rank %d", rank);
+				state = FLUSHING_SOCKET;
+				if (bytesQueued() == 0)
+					close_connection(*this);
+			}
+			else {
+				if (opt::verbose >= 3) {
+					log_f(*this, "size of chunk #%lu: %lu bytes",
+						chunk_index, chunk_size);
+				}
+				state = MPI_READY_TO_RECV_CHUNK;
+				mpi_recv_chunk(*this);
+			}
+		}
+
+		if (!completed)
+			schedule_event(update_mpi_status, 1000);
 	}
 
 private:

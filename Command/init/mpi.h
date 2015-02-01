@@ -206,34 +206,8 @@ static inline void update_mpi_status(
 		connection.update_mpi_send_eof_state();
 		return;
 	} else if (connection.state == MPI_RECVING_CHUNK_SIZE) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
-		if (opt::verbose >= 3) {
-			log_f(connection, "%s: size of chunk #%lu from rank %d",
-					completed ? "recv completed" : "waiting on recv",
-					connection.chunk_index, connection.rank);
-			if (completed) {
-				connection.chunk_index++;
-				MPI_Get_count(&status, MPI_INT, &count);
-				assert(count == 1);
-				log_f(connection, "size of chunk #%lu: %lu bytes",
-					connection.chunk_index, connection.chunk_size);
-			}
-		}
-		if (completed) {
-			if (connection.chunk_size == 0) {
-				if (opt::verbose >= 3)
-					log_f(connection, "received EOF from rank %d",
-						connection.rank);
-				connection.state = FLUSHING_SOCKET;
-				if (evbuffer_get_length(output) == 0)
-					close_connection(connection);
-			}
-			else {
-				connection.state = MPI_READY_TO_RECV_CHUNK;
-				mpi_recv_chunk(connection);
-			}
-			return;
-		}
+		connection.update_mpi_recv_chunk_size_state();
+		return;
 	} else if (connection.state == MPI_RECVING_CHUNK) {
 		MPI_Test(&connection.chunk_request_id, &completed, &status);
 		if (opt::verbose >= 3) {
