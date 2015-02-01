@@ -171,6 +171,14 @@ struct Connection {
 		return s;
 	}
 
+	struct event_base* getBase()
+	{
+		assert(bev != NULL);
+		struct event_base* base = bufferevent_get_base(bev);
+		assert(base != NULL);
+		return base;
+	}
+
 	void schedule_event(event_callback_fn callback,
 		size_t microseconds)
 	{
