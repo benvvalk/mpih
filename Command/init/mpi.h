@@ -209,34 +209,8 @@ static inline void update_mpi_status(
 		connection.update_mpi_recv_chunk_size_state();
 		return;
 	} else if (connection.state == MPI_RECVING_CHUNK) {
-		MPI_Test(&connection.chunk_request_id, &completed, &status);
-		if (opt::verbose >= 3) {
-			log_f(connection, "%s: chunk #%lu from rank %d (%lu bytes)",
-				completed ? "recv completed" : "waiting on recv",
-				connection.chunk_index, connection.rank,
-				connection.chunk_size);
-			if (completed) {
-				MPI_Get_count(&status, MPI_BYTE, &count);
-				assert(count == connection.chunk_size);
-				connection.bytes_transferred += connection.chunk_size;
-				log_f(connection, "received %lu bytes from rank %d so far",
-					connection.bytes_transferred, connection.rank);
-			}
-		}
-		if (completed) {
-			// copy recv'd data from MPI buffer to Unix socket
-			assert(connection.chunk_size > 0);
-			evbuffer_add(output, connection.chunk_buffer,
-				connection.chunk_size);
-
-			// clear MPI buffer and other state
-			connection.clear_mpi_state();
-			// post receive for size of next chunk
-			connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
-			mpi_recv_chunk_size(connection);
-
-			return;
-		}
+		connection.update_mpi_recv_chunk_state();
+		return;
 	} else {
 		log_f(connection, "illegal MPI state (%d) in timer event handler!",
 			connection.state);
