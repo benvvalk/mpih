@@ -200,35 +200,8 @@ static inline void update_mpi_status(
 		connection.update_mpi_finalize_state();
 		return;
 	} else if (connection.state == MPI_SENDING_CHUNK) {
-		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
-		if (opt::verbose >= 3) {
-			log_f(connection, "%s: size of chunk #%lu to rank %d (%lu bytes)",
-					completed ? "send completed" : "waiting on send",
-					connection.chunk_index, connection.rank,
-					connection.chunk_size);
-		}
-		if (completed) {
-			MPI_Test(&connection.chunk_request_id, &completed, &status);
-			if (opt::verbose >= 3) {
-				log_f(connection, "%s: chunk #%lu to rank %d (%lu bytes)",
-						completed ? "send completed" : "waiting on send",
-						connection.chunk_index, connection.rank,
-						connection.chunk_size);
-				if (completed) {
-					connection.bytes_transferred += connection.chunk_size;
-					log_f(connection, "sent %lu bytes to rank %d so far",
-						connection.bytes_transferred, connection.rank);
-				}
-			}
-		}
-		if (completed) {
-			connection.clear_mpi_state();
-			connection.state = MPI_READY_TO_SEND;
-			connection.chunk_index++;
-			if (connection.eof || bytes_ready > 0)
-				do_next_mpi_send(connection);
-			return;
-		}
+		connection.update_mpi_send_state();
+		return;
 	} else if (connection.state == MPI_SENDING_EOF) {
 		MPI_Test(&connection.chunk_size_request_id, &completed, &status);
 		if (opt::verbose >= 3) {

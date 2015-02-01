@@ -13,6 +13,7 @@ class Connection;
 static inline void log_f(Connection& connection, const char* fmt, ...);
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
+static inline void do_next_mpi_send(Connection& connection);
 
 static inline bool mpi_ops_pending();
 
@@ -187,6 +188,14 @@ struct Connection {
 		return base;
 	}
 
+	size_t bytesReady()
+	{
+		assert(bev != NULL);
+		struct evbuffer* input = bufferevent_get_input(bev);
+		assert(input != NULL);
+		return evbuffer_get_length(input);
+	}
+
 	void schedule_event(event_callback_fn callback,
 		size_t microseconds)
 	{
@@ -227,6 +236,45 @@ struct Connection {
 					"Shutting down!");
 
 		event_base_loopexit(getBase(), NULL);
+	}
+
+	/**
+	 * Callback to update state of 'mpih send' command.
+	 */
+	void update_mpi_send_state()
+	{
+		assert(state == MPI_SENDING_CHUNK);
+
+		MPI_Status status;
+		int completed;
+		MPI_Test(&chunk_size_request_id, &completed, &status);
+
+		if (opt::verbose >= 3) {
+			log_f(*this, "%s: size of chunk #%lu to rank %d (%lu bytes)",
+				completed ? "send completed" : "waiting on send",
+				chunk_index, rank, chunk_size);
+		}
+		if (completed) {
+			MPI_Test(&chunk_request_id, &completed, &status);
+			if (opt::verbose >= 3) {
+				log_f(*this, "%s: chunk #%lu to rank %d (%lu bytes)",
+					completed ? "send completed" : "waiting on send",
+					chunk_index, rank, chunk_size);
+			}
+		}
+		if (completed) {
+			bytes_transferred += chunk_size;
+			if (opt::verbose >= 2)
+				log_f(*this, "sent %lu bytes to rank %d so far",
+					bytes_transferred, rank);
+			clear_mpi_state();
+			state = MPI_READY_TO_SEND;
+			chunk_index++;
+			if (eof || bytesReady() > 0)
+				do_next_mpi_send(*this);
+		} else {
+			schedule_event(update_mpi_status, 1000);
+		}
 	}
 
 private:
