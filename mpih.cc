@@ -49,7 +49,8 @@ int main(int argc, char** argv)
 		command != "version" &&
 		command != "--version" &&
 		command != "help" &&
-		!opt::help)
+		!opt::help &&
+		command != "run")
 	{
 		std::cerr << "error: no socket path specified\n";
 		die(USAGE_MESSAGE);
