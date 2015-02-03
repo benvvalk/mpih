@@ -47,7 +47,7 @@ integer_read_handler(struct bufferevent *bev, void *arg)
 
 	if (line != NULL) {
 		int pos;
-		int n = sscanf(line, "%d%n", &returnVal, &n);
+		int n = sscanf(line, "%d%n", &returnVal, &pos);
 		if (n == EOF || *(line+pos) != '\0') {
 			fprintf(stderr, "error: expected integer response "
 				"but received line: '%s'\n", line);
