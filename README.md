@@ -1,10 +1,11 @@
 # Warning!
 
-This project is currently in a non-working state.  I have observed that the code hangs when doing when doing send/recv's greater than ~1k in size.
+This project is pretty new. It seems to be working but it probably needs further testing.
 
 # Description
 
 ```
+$ mpih help
 Usage: mpih [--socket <path>] [--help] <command> [<args>]
 
 Description:
@@ -25,57 +26,36 @@ The available commands are:
    init      initialize current MPI rank (starts daemon)
    rank      print rank of current MPI process
    recv      stream data from another MPI rank
+   run       set up environment and run a user script
    send      stream data to another MPI rank
    size      print number of ranks in current MPI job
 
 See 'mpih help <command>' for help on specific commands.
 ```
-
 # Synopsis
 
-hello-world.sh:
 ```bash
+$ cat hello-world.sh
 #!/bin/bash
-
 set -eu -o pipefail
 
-# client commands (e.g. 'mpih send') communicate
-# with the 'mpih init' daemon using this Unix socket
-tmpdir=$(mktemp -d)
-export MPIH_SOCKET="$tmpdir/mpih_socket"
-
-# start daemon that executes MPI routines
-mpih init
-# wait for daemon to start up
-sleep 2
-
-my_rank=$(mpih rank)
-num_ranks=$(mpih size)
-
-dest_rank=$((($my_rank + 1) % $num_ranks))
-src_rank=$(($my_rank - 1))
+# send 'hello' messages in a ring
+dest_rank=$((($MPIH_RANK + 1) % $MPIH_SIZE))
+src_rank=$(($MPIH_RANK - 1))
 if [ $src_rank -lt 0 ]; then
-	src_rank=$(($num_ranks - 1))
+	src_rank=$(($MPIH_SIZE - 1))
 fi
 
 # send a message to a neighbour
-echo "Hello, from rank $my_rank!" | mpih send $dest_rank
+echo "Hello, from rank $MPIH_RANK!" | mpih send $dest_rank
 
 # receive a message from a neighbour
 msg=$(mpih recv $src_rank)
-echo "rank $my_rank received: '$msg'"
-
-# shutdown daemon
-mpih finalize
+echo "rank $MPIH_RANK received: '$msg'"
 ```
 
-Run MPI job:
-```
-mpirun -np 10 hello-world.sh
-```
-
-Output:
-```
+```bash
+$ mpirun -np 10 mpih run hello-world.sh
 rank 1 received: 'Hello, from rank 0!'
 rank 3 received: 'Hello, from rank 2!'
 rank 2 received: 'Hello, from rank 1!'
@@ -107,6 +87,11 @@ $ cmake -DCMAKE_INSTALL_PREFIX:PATH=$HOME ..
 $ make
 $ make install
 ```
+
+# See also
+
+  * [MPI-Bash](http://www.ccs3.lanl.gov/~pakin/software/mpibash-4.3.html)
+  * [mpififo](https://bitbucket.org/nathanweeks/mpififo)
 
 # Author
 
