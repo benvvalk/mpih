@@ -29,6 +29,7 @@ static const char USAGE_MESSAGE[] =
 "   init      initialize current MPI rank (starts daemon)\n"
 "   rank      print rank of current MPI process\n"
 "   recv      stream data from another MPI rank\n"
+"   run       set up environment and run a user script\n"
 "   send      stream data to another MPI rank\n"
 "   size      print number of ranks in current MPI job\n"
 "\n"
