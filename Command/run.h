@@ -2,6 +2,7 @@
 #define _RUN_H_
 
 #include "config.h"
+#include "Command/init.h"
 #include "Command/finalize.h"
 #include "Command/rank.h"
 #include "Command/size.h"
@@ -35,6 +36,10 @@ static const char RUN_USAGE_MESSAGE[] =
 "   MPIH_LOG      log file used by 'mpih init' daemon\n"
 "   MPIH_SOCKET   Unix domain socket for communicating with\n"
 "                 the 'mpih init' daemon\n"
+"   MPIH_PIDFILE  file containing PID of 'mpih init' daemon;\n"
+"                 existence of this file indicates that the\n"
+"                 daemon is running and is ready to accept\n"
+"                 requests.\n"
 "\n"
 "   Note: MPIH_SOCKET is used implicitly by the various mpih\n"
 "   commands in order to communicate with the daemon, but is\n"
@@ -96,6 +101,12 @@ static inline int cmd_run(int argc, char** argv)
 	std::string socketStr("MPIH_SOCKET=");
 	socketStr.append(opt::socketPath);
 
+	/* pid file path for 'mpih init' daemon */
+	opt::pidPath.append(tmpdir);
+	opt::pidPath.append("mpih.pid");
+	std::string pidStr("MPIH_PIDFILE=");
+	pidStr.append(opt::pidPath);
+
 	/* set log path for 'mpih init' daemon */
 	opt::logPath.append(tmpdir);
 	opt::logPath.append("/");
@@ -125,9 +136,23 @@ static inline int cmd_run(int argc, char** argv)
 	}
 
 	if (opt::verbose)
-		std::cerr << "Waiting for MPIH daemon to start..."
+		std::cerr << "waiting for MPIH daemon to start..."
 			<< std::endl;
-	sleep(2);
+
+	struct timespec wait_time;
+	wait_time.tv_sec = 0;
+	/* 200,000,000 nanosecs == 200 millisec */
+	wait_time.tv_nsec = 200000000;
+
+	while(true) {
+		if (access(opt::pidPath.c_str(), R_OK) == 0)
+			break;
+		assert(errno == ENOENT);
+		nanosleep(&wait_time, NULL);
+	}
+
+	if (opt::verbose)
+		std::cerr << "running user script..." << std::endl;
 
 	/* query daemon for rank and set MPIH_RANK */
 	std::ostringstream rankStr;
@@ -146,14 +171,15 @@ static inline int cmd_run(int argc, char** argv)
 	if (getenv("PATH") != NULL)
 		path.append(getenv("PATH"));
 
-	const unsigned SCRIPT_ENV_SIZE = 6;
+	const unsigned SCRIPT_ENV_SIZE = 7;
 	char* envp[SCRIPT_ENV_SIZE];
 	envp[0] = strdup(socketStr.c_str());
-	envp[1] = strdup(logStr.c_str());
-	envp[2] = strdup(rankStr.str().c_str());
-	envp[3] = strdup(sizeStr.str().c_str());
-	envp[4] = strdup(path.c_str());
-	envp[5] = NULL;
+	envp[1] = strdup(pidStr.c_str());
+	envp[2] = strdup(logStr.c_str());
+	envp[3] = strdup(rankStr.str().c_str());
+	envp[4] = strdup(sizeStr.str().c_str());
+	envp[5] = strdup(path.c_str());
+	envp[6] = NULL;
 
 	if (optind >= argc) {
 		std::cerr << "error: missing arguments" << std::endl;
