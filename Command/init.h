@@ -23,7 +23,7 @@
 #include <unistd.h>
 
 static const char INIT_USAGE_MESSAGE[] =
-"Usage: " PROGRAM_NAME " [--socket <path>] init &\n"
+"Usage: " PROGRAM_NAME " [--socket <path>] init [options]\n"
 "\n"
 "Description:\n"
 "\n"
@@ -42,21 +42,28 @@ static const char INIT_USAGE_MESSAGE[] =
 "\n"
 "Options:\n"
 "\n"
-"   -f,--foreground    run daemon in the foreground\n"
-"   -l,--log PATH      log file [/dev/null]\n"
-"   -s,--socket PATH   communicate over Unix socket\n"
-"                      at PATH\n";
+"   -f,--foreground      run daemon in the foreground\n"
+"   -l,--log PATH        log file [/dev/null]\n"
+"   -p,--pid-file PATH   file containing PID of daemon;\n"
+"                        existence of this file indicates\n"
+"                        that the daemon is running and is\n"
+"                        ready to accept commands from\n"
+"                        clients\n"
+"   -s,--socket PATH     communicate over Unix socket\n"
+"                        at PATH\n";
 
 namespace opt {
 	static int foreground;
+	static std::string pidPath;
 }
 
-static const char init_shortopts[] = "fhl:v";
+static const char init_shortopts[] = "fhlp::v";
 
 static const struct option init_longopts[] = {
 	{ "foreground", no_argument, NULL, 'f' },
 	{ "help",     no_argument, NULL, 'h' },
 	{ "log",      required_argument, NULL, 'l' },
+	{ "pid-file", required_argument, NULL, 'p' },
 	{ "verbose",  no_argument, NULL, 'v' },
 	{ NULL, 0, NULL, 0 }
 };
@@ -113,6 +120,19 @@ static inline void run_in_background()
 		close(i);
 }
 
+static inline void create_pid_file(evutil_socket_t, short, void*)
+{
+	assert(!opt::pidPath.empty());
+	std::ofstream pid_file(opt::pidPath.c_str());
+	if (!pid_file) {
+		perror("error opening pid file");
+		exit(EXIT_FAILURE);
+	}
+	pid_file << getpid() << "\n";
+	assert(pid_file);
+	pid_file.close();
+}
+
 static inline void server_loop(const char* socketPath)
 {
 	// create Unix domain socket that listens for connections
@@ -130,6 +150,16 @@ static inline void server_loop(const char* socketPath)
 	int result = event_add(listener_event, NULL);
 	assert(result == 0);
 
+	// event to create a PID file at startup.  This file acts
+	// as a signal to clients that the daemon is running and
+	// ready for requests.
+	struct event* pid_file_event = NULL;
+	if (!opt::pidPath.empty()) {
+		pid_file_event = event_new(base, -1, 0, create_pid_file, NULL);
+		assert(pid_file_event != NULL);
+		event_active(pid_file_event, 0, 0);
+	}
+
 	if (opt::verbose)
 		fprintf(g_log, "Listening for connections...\n");
 
@@ -138,6 +168,8 @@ static inline void server_loop(const char* socketPath)
 
 	// cleanup
 	event_free(listener_event);
+	if (pid_file_event != NULL)
+		event_free(pid_file_event);
 	event_base_free(base);
 }
 
@@ -159,6 +191,9 @@ static inline int cmd_init(int argc, char** argv)
 		  case 'l':
 			arg >> opt::logPath;
 			break;
+		  case 'p':
+			arg >> opt::pidPath;
+			break;
 		  case 'v':
 			opt::verbose++;
 			break;
@@ -169,6 +204,9 @@ static inline int cmd_init(int argc, char** argv)
 			die(INIT_USAGE_MESSAGE);
 		}
 	}
+
+	if (opt::pidPath.empty() && getenv("MPIH_PIDFILE") != NULL)
+		opt::pidPath = getenv("MPIH_PIDFILE");
 
 	if (opt::logPath == "-" && !opt::foreground) {
 		std::cerr << "error: cannot log to STDOUT ('-') "
