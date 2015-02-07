@@ -55,6 +55,13 @@ add_executable (mpih mpih.cc)
 target_link_libraries(mpih "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
 
 #------------------------------------------------------------
+# integration tests
+#------------------------------------------------------------
+
+enable_testing()
+add_subdirectory(Test/IntegrationTest)
+
+#------------------------------------------------------------
 # install targets
 #------------------------------------------------------------
 
