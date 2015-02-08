@@ -73,25 +73,18 @@ enum ChannelRequestResult { GRANTED, QUEUED };
  *    set -eu
  *
  *    if [ $MPIH_RANK -eq 0 ]; then
- *        echo "message 1" | mpih send
- *        echo "message 2" | mpih send
+ *        echo "message 1" | mpih send &
+ *        echo "message 2" | mpih send &
  *    else
- *        recv 0 | cat
- *        recv 1 | cat
+ *        mpih recv 0 | cat &
+ *        mpih recv 0 | cat &
  *    fi
  *
- * In the above example, "message 1" and "message 2"
- * may be come intermingled such that the first recv
- * may get part of "message 2" or the second recv
- * may get part of "message 1".  The reason that this
- * can happen is that the "mpih send" commands do not
- * necessarily send all of their data before returning
- * to the shell. (After an 'mpih send' command has
- * returned to the shell, the 'mpih init' daemon may
- * continue to send data in the background.) This type of
- * issue becomes even more pronounced if we run two
- * 'mpih send' commands simulataneously (or two 'mpih recv'
- * commands simultaneously).
+ * In the above example, the two 'mpih send' commands
+ * happen simultaneously; "message 1" and "message 2"
+ * will likely become intermingled and it is
+ * unpredictable what data will be received by each
+ * the two 'mpih recv' commands.
  */
 class MPIChannelManager
 {
