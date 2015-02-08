@@ -1,12 +1,15 @@
 #ifndef _MPI_CHANNEL_MANAGER_H_
 #define _MPI_CHANNEL_MANAGER_H_
 
+#include "Command/init/log.h"
+#include "Options/CommonOptions.h"
 #include <deque>
 #include <algorithm>
 #include <unordered_map>
 #include <cassert>
+#include <sstream>
 
-enum XferDir { SEND, RECV };
+enum XferDir { NONE, SEND, RECV };
 
 /**
  * An MPI channel is defined by:
@@ -22,6 +25,9 @@ class MPIChannel
 {
 public:
 
+	MPIChannel() : m_xferDir(NONE), m_peerRank(-1),
+		m_mpiTag(-1) {}
+
 	MPIChannel(XferDir xferDir, int peerRank,
 		int mpiTag) : m_xferDir(xferDir),
 		m_peerRank(peerRank), m_mpiTag(mpiTag)
@@ -32,6 +38,22 @@ public:
 		return channel.m_xferDir == m_xferDir &&
 			channel.m_peerRank == m_peerRank &&
 			channel.m_mpiTag == m_mpiTag;
+	}
+
+	std::string str() const
+	{
+		std::ostringstream s;
+		s << "(";
+		if (m_xferDir == SEND) {
+			s << "SEND";
+		} else {
+			assert(m_xferDir == RECV);
+			s << "RECV";
+		}
+		s << "," << m_peerRank << ","
+			<< m_mpiTag << ")";
+		assert(s);
+		return s.str();
 	}
 
 	XferDir m_xferDir;
@@ -110,6 +132,7 @@ public:
 		const MPIChannel& channel)
 	{
 		ChannelMap::iterator it = m_channelMap.find(channel);
+		ChannelRequestResult result;
 		if (it == m_channelMap.end()) {
 			ConnectionQueue q;
 			q.push_back(connectionID);
@@ -118,20 +141,28 @@ public:
 			std::pair<ChannelMap::iterator, bool> inserted =
 				m_channelMap.insert(newEntry);
 			assert(inserted.second);
-			return GRANTED;
+			result = GRANTED;
 		} else {
 			ConnectionQueue& q = it->second;
 			if (q.empty())
 				q.push_back(connectionID);
 			assert(!q.empty());
-			if (q.front() == connectionID)
-				return GRANTED;
-			ConnectionQueue::iterator it =
-				std::find(q.begin(), q.end(), connectionID);
-			if (it == q.end())
-				q.push_back(connectionID);
-			return QUEUED;
+			if (q.front() == connectionID) {
+				result = GRANTED;
+			} else {
+				ConnectionQueue::iterator it =
+					std::find(q.begin(), q.end(), connectionID);
+				if (it == q.end())
+					q.push_back(connectionID);
+				result = QUEUED;
+			}
 		}
+		if (opt::verbose >= 3) {
+			log_f(connectionID, "%s MPI Channel %s",
+				result == QUEUED ? "granted" : "queued for",
+				channel.str().c_str());
+		}
+		return result;
 	}
 
 	/** Release ownership of an MPI channel */
