@@ -114,6 +114,10 @@ static inline int cmd_run(int argc, char** argv)
 	std::string logStr("MPIH_LOG=");
 	logStr.append(opt::logPath);
 
+	if (opt::verbose)
+		std::cerr << "setting daemon log path to "
+			<< opt::logPath << std::endl;
+
 	/* free memory allocated for string */
 	free(tmpdir);
 
@@ -151,21 +155,34 @@ static inline int cmd_run(int argc, char** argv)
 		nanosleep(&wait_time, NULL);
 	}
 
-	if (opt::verbose)
-		std::cerr << "running user script..." << std::endl;
-
 	/* query daemon for rank and set MPIH_RANK */
+
+	if (opt::verbose)
+		std::cerr << "querying daemon for MPI rank..." << std::endl;
+	int rank = query_rank();
+	if (opt::verbose)
+		std::cerr << "our MPI rank is " << rank << std::endl;
 	std::ostringstream rankStr;
-	rankStr << "MPIH_RANK=" << query_rank();
+	rankStr << "MPIH_RANK=" << rank;
 
 	/* query daemon for num ranks and set MPIH_SIZE */
+
+	if (opt::verbose)
+		std::cerr << "querying daemon for number of MPI ranks..."
+			<< std::endl;
+	int size = query_size();
+	if (opt::verbose)
+		std::cerr << "number of MPI ranks is " << size << std::endl;
 	std::ostringstream sizeStr;
-	sizeStr << "MPIH_SIZE=" << query_size();
+	sizeStr << "MPIH_SIZE=" << size;
 
 	/*
 	 * run the script specified by the remaining
 	 * arguments in argv
 	 */
+
+	if (opt::verbose)
+		std::cerr << "running user script..." << std::endl;
 
 	std::string path("PATH=");
 	if (getenv("PATH") != NULL)
