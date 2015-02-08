@@ -159,7 +159,7 @@ public:
 		}
 		if (opt::verbose >= 3) {
 			log_f(connectionID, "%s MPI Channel %s",
-				result == QUEUED ? "granted" : "queued for",
+				result == QUEUED ? "queued for" : "granted",
 				channel.str().c_str());
 		}
 		return result;
