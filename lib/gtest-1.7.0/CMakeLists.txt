@@ -40,9 +40,11 @@ endif()
 # ${gtest_BINARY_DIR}.
 # Language "C" is required for find_package(Threads).
 
-# This line is commented out because it causes CMake
-# to go into an infinite loop.
+# Allowing the project() command to reset C++ and C 
+# compilers here causes CMake to going into an infinite loop.
+# (A known CMake bug.)
 #project(gtest CXX C)
+project(gtest NONE)
 cmake_minimum_required(VERSION 2.6.2)
 
 if (COMMAND set_up_hermetic_build)
