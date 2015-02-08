@@ -1,9 +1,11 @@
 #ifndef _LOG_H_
 #define _LOG_H_
 
-#include "Command/init/Connection.h"
 #include <stdio.h>
 #include <cstdarg>
+#include <string>
+#include <cassert>
+#include <sstream>
 
 namespace opt {
 	static std::string logPath;
@@ -36,11 +38,11 @@ static inline void init_log()
 	}
 }
 
-static inline void log_f(Connection& connection, const char* fmt, ...)
+static inline void log_f(size_t connectionID, const char* fmt, ...)
 {
     va_list args;
 	std::ostringstream fmt2;
-	fmt2 << "[connection " << connection.id()
+	fmt2 << "[connection " << connectionID
 		<< "]: " << fmt << "\n";
     va_start(args,fmt);
     vfprintf(g_log,fmt2.str().c_str(),args);

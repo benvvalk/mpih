@@ -34,7 +34,7 @@ static inline char* read_header(Connection& connection)
 	char* line = evbuffer_readln(input, NULL, EVBUFFER_EOL_LF);
 
 	if (line == NULL && len > MAX_HEADER_SIZE) {
-		log_f(connection, "header line exceeded max length "
+		log_f(connection.id(), "header line exceeded max length "
 				"(%d bytes)", MAX_HEADER_SIZE);
 		close_connection(connection);
 	}
@@ -58,13 +58,13 @@ process_next_header(Connection& connection)
 		return;
 
 	if (g_finalize_pending) {
-		log_f(connection, "error, a client has attempted to issue commands "
+		log_f(connection.id(), "error, a client has attempted to issue commands "
 			"after 'mpih finalize' has been called!: '%s'", header);
 		exit(EXIT_FAILURE);
 	}
 
 	if (opt::verbose >= 2)
-		log_f(connection, "received header line '%s'", header);
+		log_f(connection.id(), "received header line '%s'", header);
 
 	std::stringstream ss(header);
 	free(header);
@@ -91,7 +91,7 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			log_f(connection, "error: malformed SEND header, "
+			log_f(connection.id(), "error: malformed SEND header, "
 				"expected 'SEND <RANK>'");
 			return;
 		}
@@ -125,7 +125,7 @@ process_next_header(Connection& connection)
 	} else if (command == "FINALIZE") {
 
 		if (opt::verbose)
-			log_f(connection, "preparing to shut down daemon...");
+			log_f(connection.id(), "preparing to shut down daemon...");
 
 		g_finalize_pending = true;
 		connection.state = MPI_FINALIZE;
@@ -135,7 +135,7 @@ process_next_header(Connection& connection)
 		update_mpi_status(socket, 0, &connection);
 
 	} else {
-		log_f(connection, "error: unrecognized header command '%s'",
+		log_f(connection.id(), "error: unrecognized header command '%s'",
 			command.c_str());
 	}
 }
@@ -182,7 +182,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 
 	if (error & BEV_EVENT_EOF) {
 		if (opt::verbose >= 2)
-			log_f(connection, "read EOF from client");
+			log_f(connection.id(), "read EOF from client");
 		// client has closed socket
 		connection.eof = true;
 		// we may still have pending MPI sends
@@ -195,7 +195,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	}
 
 	if (!connection.mpi_ops_pending()) {
-		log_f(connection, "closing connection from event handler");
+		log_f(connection.id(), "closing connection from event handler");
 		close_connection(connection);
 	}
 }
@@ -220,7 +220,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 	connection->socket = fd;
 
 	if (opt::verbose)
-		log_f(*connection, "opened connection to client");
+		log_f(connection->id(), "opened connection to client");
 
 	// set callbacks for buffer input/output
 	bufferevent_setcb(bev, init_read_handler,

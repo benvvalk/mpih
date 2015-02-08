@@ -7,14 +7,17 @@
 #include <algorithm>
 #include <cassert>
 #include <cstdarg>
+#include <event2/event.h>
+#include <event2/buffer.h>
+#include <event2/bufferevent.h>
 
 // forward declarations
 class Connection;
-static inline void log_f(Connection& connection, const char* fmt, ...);
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 static inline void do_next_mpi_send(Connection& connection);
 static inline void close_connection(Connection& connection);
+static inline void mpi_send_chunk(Connection& connection);
 static inline void mpi_recv_chunk(Connection& connection);
 static inline void mpi_recv_chunk_size(Connection& connection);
 static inline bool mpi_ops_pending();
@@ -240,14 +243,14 @@ struct Connection {
 
 		if (::mpi_ops_pending()) {
 			if (opt::verbose >= 3)
-				log_f(*this, "waiting for pending MPI "
+				log_f(connection_id, "waiting for pending MPI "
 						"transfers to complete");
 			schedule_event(update_mpi_status, 1000);
 			return;
 		}
 
 		if (opt::verbose >= 2)
-			log_f(*this, "pending MPI transfers complete. "
+			log_f(connection_id, "pending MPI transfers complete. "
 					"Shutting down!");
 
 		event_base_loopexit(getBase(), NULL);
@@ -265,14 +268,14 @@ struct Connection {
 		MPI_Test(&chunk_size_request_id, &completed, &status);
 
 		if (opt::verbose >= 3) {
-			log_f(*this, "%s: size of chunk #%lu to rank %d (%lu bytes)",
+			log_f(connection_id, "%s: size of chunk #%lu to rank %d (%lu bytes)",
 				completed ? "send completed" : "waiting on send",
 				chunk_index, rank, chunk_size);
 		}
 		if (completed) {
 			MPI_Test(&chunk_request_id, &completed, &status);
 			if (opt::verbose >= 3) {
-				log_f(*this, "%s: chunk #%lu to rank %d (%lu bytes)",
+				log_f(connection_id, "%s: chunk #%lu to rank %d (%lu bytes)",
 					completed ? "send completed" : "waiting on send",
 					chunk_index, rank, chunk_size);
 			}
@@ -280,7 +283,7 @@ struct Connection {
 		if (completed) {
 			bytes_transferred += chunk_size;
 			if (opt::verbose >= 2)
-				log_f(*this, "sent %lu bytes to rank %d so far",
+				log_f(connection_id, "sent %lu bytes to rank %d so far",
 					bytes_transferred, rank);
 			clear_mpi_state();
 			state = MPI_READY_TO_SEND;
@@ -306,15 +309,15 @@ struct Connection {
 		MPI_Test(&chunk_size_request_id, &completed, &status);
 
 		if (opt::verbose >= 3) {
-			log_f(*this, "%s: EOF to rank %d",
+			log_f(connection_id, "%s: EOF to rank %d",
 				completed ? "send completed" : "waiting on send",
 				rank);
 			if (completed)
-				log_f(*this, "sent %lu bytes to rank %d so far",
+				log_f(connection_id, "sent %lu bytes to rank %d so far",
 					bytes_transferred, rank);
 		}
 		if (completed) {
-			log_f(*this, "closing connection from mpi handler");
+			log_f(connection_id, "closing connection from mpi handler");
 			close_connection(*this);
 		} else {
 			schedule_event(update_mpi_status, 1000);
@@ -334,7 +337,7 @@ struct Connection {
 		MPI_Test(&chunk_size_request_id, &completed, &status);
 
 		if (opt::verbose >= 3) {
-			log_f(*this, "%s: size of chunk #%lu from rank %d",
+			log_f(connection_id, "%s: size of chunk #%lu from rank %d",
 					completed ? "recv completed" : "waiting on recv",
 					chunk_index, rank);
 		}
@@ -346,14 +349,14 @@ struct Connection {
 			assert(count == 1);
 			if (chunk_size == 0) {
 				if (opt::verbose >= 3)
-					log_f(*this, "received EOF from rank %d", rank);
+					log_f(connection_id, "received EOF from rank %d", rank);
 				state = FLUSHING_SOCKET;
 				if (bytesQueued() == 0)
 					close_connection(*this);
 			}
 			else {
 				if (opt::verbose >= 3) {
-					log_f(*this, "size of chunk #%lu: %lu bytes",
+					log_f(connection_id, "size of chunk #%lu: %lu bytes",
 						chunk_index, chunk_size);
 				}
 				state = MPI_READY_TO_RECV_CHUNK;
@@ -376,7 +379,7 @@ struct Connection {
 		MPI_Test(&chunk_request_id, &completed, &status);
 
 		if (opt::verbose >= 3) {
-			log_f(*this, "%s: chunk #%lu from rank %d (%lu bytes)",
+			log_f(connection_id, "%s: chunk #%lu from rank %d (%lu bytes)",
 				completed ? "recv completed" : "waiting on recv",
 				chunk_index, rank, chunk_size);
 		}
@@ -386,7 +389,7 @@ struct Connection {
 			assert(count == chunk_size);
 			bytes_transferred += chunk_size;
 			if (opt::verbose >= 3) {
-				log_f(*this, "received %lu bytes from rank %d so far",
+				log_f(connection_id, "received %lu bytes from rank %d so far",
 					bytes_transferred, rank);
 			}
 			// copy recv'd data from MPI buffer to Unix socket
@@ -421,7 +424,7 @@ static inline void
 close_connection(Connection& connection)
 {
 	if (opt::verbose)
-		log_f(connection, "closing connection");
+		log_f(connection.id(), "closing connection");
 
 	connection.close();
 
