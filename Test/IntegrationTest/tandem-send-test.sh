@@ -46,21 +46,29 @@ if [ $MPIH_RANK -eq 0 ]; then
 else
 	expected_size=$(du -b $data_file | cut -f1)
 	expected_md5sum=$(md5sum $data_file | cut -d' ' -f1)
+
 	mpih recv 0 > $recv1_file
 	recv1_size=$(du -b $recv1_file | cut -f1)
 	recv1_md5sum=$(md5sum $recv1_file | cut -d' ' -f1)
+
 	mpih recv 0 > $recv2_file
 	recv2_size=$(du -b $recv2_file | cut -f1)
 	recv2_md5sum=$(md5sum $recv2_file | cut -d' ' -f1)
-	if [ "$recv1_size" -ne "$expected_size" ]; then
-		echo "FAILED: data size for recv #1 does not match expected size"
-		stderr "correct size (bytes): $expected_size"
-		stderr "recv #1 size (bytes): $recv1_size"
-		exit 1
-	elif [ "$recv1_md5sum" != "$expected_md5sum" ]; then
-		stderr "FAILED: md5sum for recv #1 does not match md5sum"
-		stderr "correct md5sum: $expected_md5sum"
-		stderr "recv #1 md5sum: $recv1_md5sum"
+
+	if [ "$recv1_size" -ne "$expected_size" ] || \
+		[ "$recv1_md5sum" != "$expected_md5sum" ] || \
+		[ "$recv2_size" -ne "$expected_size" ] || \
+		[ "$recv2_md5sum" != "$expected_md5sum" ]; then
+		stderr "FAILED!:"
+		stderr "  test data: $data_file"
+		stderr "  test data size (bytes): $expected_size"
+		stderr "  test data md5sum: $expected_size"
+		stderr "  recv #1 data: $recv1_file"
+		stderr "  recv #1 size (bytes): $recv1_size"
+		stderr "  recv #1 md5sum: $recv1_md5sum"
+		stderr "  recv #2 data: $recv1_file"
+		stderr "  recv #2 size (bytes): $recv2_size"
+		stderr "  recv #2 md5sum: $recv2_md5sum"
 		exit 1
 	else
 		stderr "PASSED!"
