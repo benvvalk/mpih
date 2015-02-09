@@ -111,6 +111,8 @@ process_next_header(Connection& connection)
 		}
 
 		assert(result == GRANTED);
+		assert(connection.bev != NULL);
+		bufferevent_setwatermark(connection.bev, EV_READ, 1*1024*1024, 0);
 		connection.holding_mpi_channel = true;
 		connection.state = MPI_READY_TO_SEND_CHUNK_SIZE;
 
@@ -211,13 +213,16 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	if (error & BEV_EVENT_EOF) {
 		if (opt::verbose >= 2)
 			log_f(connection.id(), "read EOF from client");
+
 		// client has closed socket
 		connection.eof = true;
+
 		// we may still have pending MPI sends
 		if (connection.state == MPI_READY_TO_SEND_CHUNK_SIZE) {
 			mpi_send_chunk_size(connection);
 			return;
 		}
+
 	} else if (error & BEV_EVENT_ERROR) {
 		perror("libevent");
 	}
@@ -255,7 +260,7 @@ init_accept_handler(evutil_socket_t listener, short event, void *arg)
 		init_write_handler, init_event_handler,
 		connection);
 	// set low/high watermarks for invoking callbacks
-	bufferevent_setwatermark(bev, EV_READ, 0, MAX_BUFFER_SIZE);
+	bufferevent_setwatermark(bev, EV_READ, 0, 0);
 	// enable callbacks
 	bufferevent_enable(bev, EV_READ|EV_WRITE);
 }

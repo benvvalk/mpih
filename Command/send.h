@@ -52,7 +52,7 @@ send_write_handler(struct bufferevent* bev, void* arg)
 	FILE* file = input_files.back();
 	assert(file != NULL);
 
-	const int READ_SIZE = 32768;
+	const int READ_SIZE = 1 * 1024 * 1024;
 	char buffer[READ_SIZE];
 
 	if (opt::verbose >= 3)
