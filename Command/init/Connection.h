@@ -2,6 +2,7 @@
 #define _CONNECTION_H_
 
 #include "Command/init/log.h"
+#include "Command/init/MPIChannel.h"
 #include <mpi.h>
 #include <vector>
 #include <algorithm>
@@ -24,6 +25,7 @@ static inline bool mpi_ops_pending();
 
 enum ConnectionState {
 	READING_HEADER=0,
+	WAITING_FOR_MPI_CHANNEL,
 	MPI_READY_TO_RECV_CHUNK_SIZE,
 	MPI_RECVING_CHUNK_SIZE,
 	MPI_READY_TO_RECV_CHUNK,
@@ -63,6 +65,14 @@ struct Connection {
 	bool eof;
 	/** timeout event (libevent) */
 	struct event* next_event;
+	/**
+	  * The "MPI channel" used by a MPI SEND/RECV stream.
+	  * Each MPI channel consists of a transfer direction
+	  * (SEND/RECV), a peer MPI rank, and an MPI message tag.
+	  */
+	MPIChannel channel;
+	/** true when we are holding an MPI channel */
+	bool holding_mpi_channel;
 
 	Connection() :
 		connection_id(next_connection_id),
@@ -75,7 +85,8 @@ struct Connection {
 		chunk_buffer(NULL),
 		bytes_transferred(0),
 		eof(false),
-		next_event(NULL)
+		next_event(NULL),
+		holding_mpi_channel(false)
 	{
 		next_connection_id = (next_connection_id + 1) % SIZE_MAX;
 		memset(&chunk_size_request_id, 0, sizeof(MPI_Request));
@@ -113,6 +124,17 @@ struct Connection {
 
 	void close()
 	{
+		/*
+		 * If we are currently using an MPI channel,
+		 * release for use by other mpih clients.
+		 */
+		if (holding_mpi_channel) {
+			MPIChannelManager& manager =
+				MPIChannelManager::getInstance();
+			manager.releaseChannel(connection_id,
+				channel);
+			holding_mpi_channel = false;
+		}
 		if (socket != -1)
 			evutil_closesocket(socket);
 		socket = -1;
@@ -147,6 +169,7 @@ struct Connection {
 			case MPI_RECVING_CHUNK:
 			case MPI_SENDING_CHUNK:
 			case MPI_SENDING_EOF:
+			case WAITING_FOR_MPI_CHANNEL:
 				return true;
 			default:
 				return false;
@@ -159,6 +182,8 @@ struct Connection {
 		switch (state) {
 		case READING_HEADER:
 			s = "READING_HEADER"; break;
+		case WAITING_FOR_MPI_CHANNEL:
+			s = "WAITING_FOR_MPI_CHANNEL"; break;
 		case MPI_READY_TO_RECV_CHUNK_SIZE:
 			s = "MPI_READY_TO_RECV_CHUNK_SIZE"; break;
 		case MPI_RECVING_CHUNK_SIZE:
@@ -229,6 +254,32 @@ struct Connection {
 		time.tv_usec = microseconds;
 		next_event = event_new(base, -1, 0, callback, this);
 		event_add(next_event, &time);
+	}
+
+	/**
+	 * Callback to update state when we are waiting
+	 * for an MPI channel in order to do a SEND/RECV.
+	 */
+	void update_mpi_channel_state()
+	{
+		MPIChannelManager& manager = MPIChannelManager::getInstance();
+		ChannelRequestResult result = manager.requestChannel(
+			connection_id, channel);
+		if (result == QUEUED) {
+			schedule_event(update_mpi_status, 1000);
+			return;
+		}
+		assert(result == GRANTED);
+		holding_mpi_channel = true;
+		if (channel.m_xferDir == SEND) {
+			state = MPI_READY_TO_SEND;
+			if (bytesReady() > 0)
+				mpi_send_chunk(*this);
+		} else {
+			assert(channel.m_xferDir == RECV);
+			state = MPI_READY_TO_RECV_CHUNK_SIZE;
+			mpi_recv_chunk_size(*this);
+		}
 	}
 
 	/**

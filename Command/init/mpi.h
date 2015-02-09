@@ -178,7 +178,10 @@ static inline void update_mpi_status(
 	log_f(connection.id(), "entering update_mpi_status with state %s",
 		connection.getState().c_str());
 
-	if (connection.state == MPI_FINALIZE) {
+	if (connection.state == WAITING_FOR_MPI_CHANNEL) {
+		connection.update_mpi_channel_state();
+		return;
+	} else if (connection.state == MPI_FINALIZE) {
 		connection.update_mpi_finalize_state();
 		return;
 	} else if (connection.state == MPI_SENDING_CHUNK) {

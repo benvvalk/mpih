@@ -96,8 +96,22 @@ process_next_header(Connection& connection)
 			return;
 		}
 
+		MPIChannelManager& manager = MPIChannelManager::getInstance();
+
 		connection.clear();
 		connection.rank = rank;
+		connection.channel = { SEND, rank, 0 };
+		ChannelRequestResult result = manager.requestChannel(
+			connection.id(), connection.channel);
+
+		if (result == QUEUED) {
+			connection.state = WAITING_FOR_MPI_CHANNEL;
+			connection.schedule_event(update_mpi_status, 1000);
+			return;
+		}
+
+		assert(result == GRANTED);
+		connection.holding_mpi_channel = true;
 		connection.state = MPI_READY_TO_SEND;
 
 		struct evbuffer* input = bufferevent_get_input(bev);
@@ -111,13 +125,27 @@ process_next_header(Connection& connection)
 		int rank;
 		ss >> rank;
 		if (ss.fail() || !ss.eof()) {
-			log_f(connection, "error: malformed RECV header, "
+			log_f(connection.id(), "error: malformed RECV header, "
 				"expected 'RECV <RANK>'");
 			return;
 		}
 
+		MPIChannelManager& manager = MPIChannelManager::getInstance();
+
 		connection.clear();
 		connection.rank = rank;
+		connection.channel = { RECV, rank, 0 };
+		ChannelRequestResult result = manager.requestChannel(
+			connection.id(), connection.channel);
+
+		if (result == QUEUED) {
+			connection.state = WAITING_FOR_MPI_CHANNEL;
+			connection.schedule_event(update_mpi_status, 1000);
+			return;
+		}
+
+		assert(result == GRANTED);
+		connection.holding_mpi_channel = true;
 		connection.state = MPI_READY_TO_RECV_CHUNK_SIZE;
 
 		mpi_recv_chunk_size(connection);
