@@ -16,10 +16,7 @@ namespace mpi {
 	int numProc;
 }
 
-// forward declarations
-static inline void create_timer_event(struct event_base* base,
-	void (*callback_func)(evutil_socket_t, short, void*),
-	void* callback_arg, unsigned seconds);
+// forward declaration
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 
