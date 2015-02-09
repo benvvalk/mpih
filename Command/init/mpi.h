@@ -23,30 +23,6 @@ static inline void create_timer_event(struct event_base* base,
 static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 
-static inline void mpi_send_eof(Connection& connection)
-{
-	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
-
-	struct bufferevent* bev = connection.bev;
-	assert(bev != NULL);
-
-	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	connection.state = MPI_SENDING_EOF;
-	connection.chunk_size = 0;
-
-	if (opt::verbose >= 2)
-		log_f(connection.id(), "sending EOF to rank %d", connection.rank);
-
-	// send chunk size of zero to indicate EOF
-	MPI_Isend((void*)&connection.chunk_size, 1, MPI_INT,
-		connection.rank, MPI_DEFAULT_TAG, MPI_COMM_WORLD,
-		&connection.chunk_size_request_id);
-
-	// check if MPI_Isend has completed
-	update_mpi_status(socket, 0, (void*)&connection);
-}
-
 static inline void mpi_send_chunk_size(Connection& connection)
 {
 	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
@@ -60,9 +36,12 @@ static inline void mpi_send_chunk_size(Connection& connection)
 	assert(input != NULL);
 
 	uint64_t chunk_size = evbuffer_get_length(input);
-	assert(chunk_size > 0);
-
-	connection.state = MPI_SENDING_CHUNK_SIZE;
+	if (connection.eof && chunk_size == 0) {
+		connection.state = MPI_SENDING_EOF;
+	} else {
+		assert(chunk_size > 0);
+		connection.state = MPI_SENDING_CHUNK_SIZE;
+	}
 	connection.chunk_size = chunk_size;
 
 	if (opt::verbose >= 2)
@@ -116,30 +95,6 @@ static inline void mpi_send_chunk(Connection& connection)
 
 	// check if MPI_Isend's have completed
 	update_mpi_status(socket, 0, (void*)&connection);
-}
-
-static inline void do_next_mpi_send(Connection& connection)
-{
-	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
-
-	struct bufferevent* bev = connection.bev;
-	assert(bev != NULL);
-
-	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	struct event_base* base = bufferevent_get_base(bev);
-
-	struct evbuffer* input = bufferevent_get_input(bev);
-	assert(input != NULL);
-
-	uint64_t bytes_ready = evbuffer_get_length(input);
-
-	if (connection.eof && bytes_ready == 0)
-		mpi_send_eof(connection);
-	else {
-		assert(bytes_ready > 0);
-		mpi_send_chunk_size(connection);
-	}
 }
 
 static inline void mpi_recv_chunk_size(Connection& connection)

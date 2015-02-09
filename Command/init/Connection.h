@@ -370,7 +370,7 @@ struct Connection {
 		state = MPI_READY_TO_SEND_CHUNK_SIZE;
 		chunk_index++;
 		if (eof || bytesReady() > 0)
-			do_next_mpi_send(*this);
+			mpi_send_chunk_size(*this);
 	}
 
 	/**

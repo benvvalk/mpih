@@ -196,7 +196,7 @@ init_read_handler(struct bufferevent *bev, void *arg)
 	if (connection.state == READING_HEADER)
 		process_next_header(connection);
 	else if (connection.state == MPI_READY_TO_SEND_CHUNK_SIZE)
-		do_next_mpi_send(connection);
+		mpi_send_chunk_size(connection);
 }
 
 static inline void
@@ -215,7 +215,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 		connection.eof = true;
 		// we may still have pending MPI sends
 		if (connection.state == MPI_READY_TO_SEND_CHUNK_SIZE) {
-			do_next_mpi_send(connection);
+			mpi_send_chunk_size(connection);
 			return;
 		}
 	} else if (error & BEV_EVENT_ERROR) {
