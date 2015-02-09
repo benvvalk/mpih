@@ -12,6 +12,13 @@ add_test(TandemSendTest
 	run ${CMAKE_CURRENT_SOURCE_DIR}/tandem-send-test.sh 1000
 )
 
+add_test(OverlappingSendTest
+	${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 2
+	${MPIEXEC_PREFLAGS}
+	mpih ${MPIEXEC_POSTFLAGS}
+	run ${CMAKE_CURRENT_SOURCE_DIR}/overlapping-send-test.sh 1000
+)
+
 add_test(TransferTest
 	${MPIEXEC} ${MPIEXEC_NUMPROC_FLAG} 2
 	${MPIEXEC_PREFLAGS}
@@ -22,6 +29,7 @@ add_test(TransferTest
 set_tests_properties(
 	HelloWorldTest
 	TandemSendTest
+	OverlappingSendTest
 	TransferTest
 	PROPERTIES ENVIRONMENT
 	"PATH=${PROJECT_BINARY_DIR}:$ENV{PATH}"
