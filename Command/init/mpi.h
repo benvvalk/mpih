@@ -9,8 +9,6 @@
 
 #define MPI_DEFAULT_TAG 0
 
-static const unsigned TIMER_MICROSEC = 1000;
-
 namespace mpi {
 	int rank;
 	int numProc;
