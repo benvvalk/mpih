@@ -202,9 +202,9 @@ struct Connection {
 		case MPI_SENDING_CHUNK_SIZE:
 			s = "MPI_SENDING_CHUNK_SIZE"; break;
 		case MPI_READY_TO_SEND_CHUNK:
-			s = "MPI_READY_TO_SEND_CHUNK_SIZE"; break;
+			s = "MPI_READY_TO_SEND_CHUNK"; break;
 		case MPI_SENDING_CHUNK:
-			s = "MPI_SENDING_CHUNK_SIZE"; break;
+			s = "MPI_SENDING_CHUNK"; break;
 		case MPI_SENDING_EOF:
 			s = "MPI_SENDING_EOF"; break;
 		case MPI_FINALIZE:
