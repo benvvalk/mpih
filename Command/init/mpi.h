@@ -25,12 +25,12 @@ static inline void update_mpi_status(
 
 static inline void mpi_send_eof(Connection& connection)
 {
+	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
+
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
 
 	evutil_socket_t socket = bufferevent_getfd(bev);
-
-	assert(connection.state == MPI_READY_TO_SEND);
 
 	connection.state = MPI_SENDING_EOF;
 	connection.chunk_size = 0;
@@ -47,9 +47,40 @@ static inline void mpi_send_eof(Connection& connection)
 	update_mpi_status(socket, 0, (void*)&connection);
 }
 
+static inline void mpi_send_chunk_size(Connection& connection)
+{
+	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
+
+	struct bufferevent* bev = connection.bev;
+	assert(bev != NULL);
+
+	evutil_socket_t socket = bufferevent_getfd(bev);
+
+	struct evbuffer* input = bufferevent_get_input(bev);
+	assert(input != NULL);
+
+	uint64_t chunk_size = evbuffer_get_length(input);
+	assert(chunk_size > 0);
+
+	connection.state = MPI_SENDING_CHUNK_SIZE;
+	connection.chunk_size = chunk_size;
+
+	if (opt::verbose >= 2)
+		log_f(connection.id(), "sending size of chunk #%lu (%d bytes) to rank %d",
+			connection.chunk_index, connection.chunk_size, connection.rank);
+
+	// send chunk size in advance of data chunk
+	MPI_Isend((void*)&connection.chunk_size, 1, MPI_INT,
+		connection.rank, MPI_DEFAULT_TAG, MPI_COMM_WORLD,
+		&connection.chunk_size_request_id);
+
+	// check if MPI_Isend has completed
+	update_mpi_status(socket, 0, (void*)&connection);
+}
+
 static inline void mpi_send_chunk(Connection& connection)
 {
-	assert(connection.state == MPI_READY_TO_SEND);
+	assert(connection.state == MPI_READY_TO_SEND_CHUNK);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
@@ -62,11 +93,10 @@ static inline void mpi_send_chunk(Connection& connection)
 	struct evbuffer* input = bufferevent_get_input(bev);
 	assert(input != NULL);
 
-	uint64_t chunk_size = evbuffer_get_length(input);
-	assert(chunk_size > 0);
+	// sanity check (we've already sent the chunk size to the receiver)
+	assert(connection.chunk_size <= evbuffer_get_length(input));
 
 	connection.state = MPI_SENDING_CHUNK;
-	connection.chunk_size = chunk_size;
 	connection.chunk_buffer = (char*)malloc(connection.chunk_size);
 	assert(connection.chunk_buffer != NULL);
 
@@ -74,15 +104,6 @@ static inline void mpi_send_chunk(Connection& connection)
 	int bytesRemoved = evbuffer_remove(input,
 		(void*)connection.chunk_buffer, connection.chunk_size);
 	assert(bytesRemoved == connection.chunk_size);
-
-	if (opt::verbose >= 2)
-		log_f(connection.id(), "sending size of chunk #%lu (%d bytes) to rank %d",
-			connection.chunk_index, connection.chunk_size, connection.rank);
-
-	// send chunk size in advance of data chunk
-	MPI_Isend((void*)&connection.chunk_size, 1, MPI_INT,
-		connection.rank, MPI_DEFAULT_TAG, MPI_COMM_WORLD,
-		&connection.chunk_size_request_id);
 
 	if (opt::verbose >= 2)
 		log_f(connection.id(), "sending chunk #%lu to rank %d (%d bytes)",
@@ -99,7 +120,7 @@ static inline void mpi_send_chunk(Connection& connection)
 
 static inline void do_next_mpi_send(Connection& connection)
 {
-	assert(connection.state == MPI_READY_TO_SEND);
+	assert(connection.state == MPI_READY_TO_SEND_CHUNK_SIZE);
 
 	struct bufferevent* bev = connection.bev;
 	assert(bev != NULL);
@@ -117,7 +138,7 @@ static inline void do_next_mpi_send(Connection& connection)
 		mpi_send_eof(connection);
 	else {
 		assert(bytes_ready > 0);
-		mpi_send_chunk(connection);
+		mpi_send_chunk_size(connection);
 	}
 }
 
@@ -184,8 +205,11 @@ static inline void update_mpi_status(
 	} else if (connection.state == MPI_FINALIZE) {
 		connection.update_mpi_finalize_state();
 		return;
+	} else if (connection.state == MPI_SENDING_CHUNK_SIZE) {
+		connection.update_mpi_send_chunk_size_state();
+		return;
 	} else if (connection.state == MPI_SENDING_CHUNK) {
-		connection.update_mpi_send_state();
+		connection.update_mpi_send_chunk_state();
 		return;
 	} else if (connection.state == MPI_SENDING_EOF) {
 		connection.update_mpi_send_eof_state();

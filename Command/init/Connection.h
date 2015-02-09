@@ -18,6 +18,7 @@ static inline void update_mpi_status(
 	evutil_socket_t socket, short event, void* arg);
 static inline void do_next_mpi_send(Connection& connection);
 static inline void close_connection(Connection& connection);
+static inline void mpi_send_chunk_size(Connection& connection);
 static inline void mpi_send_chunk(Connection& connection);
 static inline void mpi_recv_chunk(Connection& connection);
 static inline void mpi_recv_chunk_size(Connection& connection);
@@ -30,7 +31,9 @@ enum ConnectionState {
 	MPI_RECVING_CHUNK_SIZE,
 	MPI_READY_TO_RECV_CHUNK,
 	MPI_RECVING_CHUNK,
-	MPI_READY_TO_SEND,
+	MPI_READY_TO_SEND_CHUNK_SIZE,
+	MPI_SENDING_CHUNK_SIZE,
+	MPI_READY_TO_SEND_CHUNK,
 	MPI_SENDING_CHUNK,
 	MPI_SENDING_EOF,
 	MPI_FINALIZE,
@@ -164,9 +167,11 @@ struct Connection {
 		{
 			case MPI_READY_TO_RECV_CHUNK_SIZE:
 			case MPI_READY_TO_RECV_CHUNK:
-			case MPI_READY_TO_SEND:
 			case MPI_RECVING_CHUNK_SIZE:
 			case MPI_RECVING_CHUNK:
+			case MPI_READY_TO_SEND_CHUNK_SIZE:
+			case MPI_READY_TO_SEND_CHUNK:
+			case MPI_SENDING_CHUNK_SIZE:
 			case MPI_SENDING_CHUNK:
 			case MPI_SENDING_EOF:
 			case WAITING_FOR_MPI_CHANNEL:
@@ -192,10 +197,14 @@ struct Connection {
 			s = "MPI_READY_TO_RECV_CHUNK"; break;
 		case MPI_RECVING_CHUNK:
 			s = "MPI_RECVING_CHUNK"; break;
-		case MPI_READY_TO_SEND:
-			s = "MPI_READY_TO_SEND"; break;
+		case MPI_READY_TO_SEND_CHUNK_SIZE:
+			s = "MPI_READY_TO_SEND_CHUNK_SIZE"; break;
+		case MPI_SENDING_CHUNK_SIZE:
+			s = "MPI_SENDING_CHUNK_SIZE"; break;
+		case MPI_READY_TO_SEND_CHUNK:
+			s = "MPI_READY_TO_SEND_CHUNK_SIZE"; break;
 		case MPI_SENDING_CHUNK:
-			s = "MPI_SENDING_CHUNK"; break;
+			s = "MPI_SENDING_CHUNK_SIZE"; break;
 		case MPI_SENDING_EOF:
 			s = "MPI_SENDING_EOF"; break;
 		case MPI_FINALIZE:
@@ -272,9 +281,9 @@ struct Connection {
 		assert(result == GRANTED);
 		holding_mpi_channel = true;
 		if (channel.m_xferDir == SEND) {
-			state = MPI_READY_TO_SEND;
+			state = MPI_READY_TO_SEND_CHUNK_SIZE;
 			if (bytesReady() > 0)
-				mpi_send_chunk(*this);
+				mpi_send_chunk_size(*this);
 		} else {
 			assert(channel.m_xferDir == RECV);
 			state = MPI_READY_TO_RECV_CHUNK_SIZE;
@@ -310,9 +319,9 @@ struct Connection {
 	/**
 	 * Callback to update state of 'mpih send' command.
 	 */
-	void update_mpi_send_state()
+	void update_mpi_send_chunk_size_state()
 	{
-		assert(state == MPI_SENDING_CHUNK);
+		assert(state == MPI_SENDING_CHUNK_SIZE);
 
 		MPI_Status status;
 		int completed;
@@ -323,27 +332,45 @@ struct Connection {
 				completed ? "send completed" : "waiting on send",
 				chunk_index, rank, chunk_size);
 		}
-		if (completed) {
-			MPI_Test(&chunk_request_id, &completed, &status);
-			if (opt::verbose >= 3) {
-				log_f(connection_id, "%s: chunk #%lu to rank %d (%lu bytes)",
-					completed ? "send completed" : "waiting on send",
-					chunk_index, rank, chunk_size);
-			}
-		}
-		if (completed) {
-			bytes_transferred += chunk_size;
-			if (opt::verbose >= 2)
-				log_f(connection_id, "sent %lu bytes to rank %d so far",
-					bytes_transferred, rank);
-			clear_mpi_state();
-			state = MPI_READY_TO_SEND;
-			chunk_index++;
-			if (eof || bytesReady() > 0)
-				do_next_mpi_send(*this);
-		} else {
+
+		if (!completed) {
 			schedule_event(update_mpi_status, 1000);
+			return;
 		}
+
+		assert(completed);
+		state = MPI_READY_TO_SEND_CHUNK;
+		mpi_send_chunk(*this);
+	}
+
+	void update_mpi_send_chunk_state()
+	{
+		assert(state == MPI_SENDING_CHUNK);
+
+		MPI_Status status;
+		int completed;
+		MPI_Test(&chunk_request_id, &completed, &status);
+		if (opt::verbose >= 3) {
+			log_f(connection_id, "%s: chunk #%lu to rank %d (%lu bytes)",
+				completed ? "send completed" : "waiting on send",
+				chunk_index, rank, chunk_size);
+		}
+
+		if (!completed) {
+			schedule_event(update_mpi_status, 1000);
+			return;
+		}
+
+		assert(completed);
+		bytes_transferred += chunk_size;
+		if (opt::verbose >= 2)
+			log_f(connection_id, "sent %lu bytes to rank %d so far",
+				bytes_transferred, rank);
+		clear_mpi_state();
+		state = MPI_READY_TO_SEND_CHUNK_SIZE;
+		chunk_index++;
+		if (eof || bytesReady() > 0)
+			do_next_mpi_send(*this);
 	}
 
 	/**

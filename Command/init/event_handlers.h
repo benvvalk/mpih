@@ -112,13 +112,13 @@ process_next_header(Connection& connection)
 
 		assert(result == GRANTED);
 		connection.holding_mpi_channel = true;
-		connection.state = MPI_READY_TO_SEND;
+		connection.state = MPI_READY_TO_SEND_CHUNK_SIZE;
 
 		struct evbuffer* input = bufferevent_get_input(bev);
 		assert(input != NULL);
 
 		if (evbuffer_get_length(input) > 0)
-			mpi_send_chunk(connection);
+			mpi_send_chunk_size(connection);
 
 	} else if (command == "RECV") {
 
@@ -195,7 +195,7 @@ init_read_handler(struct bufferevent *bev, void *arg)
 
 	if (connection.state == READING_HEADER)
 		process_next_header(connection);
-	else if (connection.state == MPI_READY_TO_SEND)
+	else if (connection.state == MPI_READY_TO_SEND_CHUNK_SIZE)
 		do_next_mpi_send(connection);
 }
 
@@ -214,7 +214,7 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 		// client has closed socket
 		connection.eof = true;
 		// we may still have pending MPI sends
-		if (connection.state == MPI_READY_TO_SEND) {
+		if (connection.state == MPI_READY_TO_SEND_CHUNK_SIZE) {
 			do_next_mpi_send(connection);
 			return;
 		}
