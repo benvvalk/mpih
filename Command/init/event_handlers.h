@@ -174,17 +174,13 @@ init_write_handler(struct bufferevent *unused, void *arg)
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
-	// for consistency, always use bev from connection
-	struct bufferevent* bev = connection.bev;
-	assert(bev != NULL);
+	assert(connection.bytesQueued() == 0);
 
-	struct evbuffer* output = bufferevent_get_output(bev);
-	assert(output != NULL);
+	if (opt::verbose >= 3)
+		log_f(connection.id(), "client socket ready for writing");
 
-	if (connection.state == FLUSHING_SOCKET) {
-		assert(evbuffer_get_length(output) == 0);
+	if (connection.state == FLUSHING_SOCKET)
 		close_connection(connection);
-	}
 }
 
 static inline void
@@ -192,6 +188,10 @@ init_read_handler(struct bufferevent *bev, void *arg)
 {
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
+
+	if (opt::verbose >= 3)
+		log_f(connection.id(), "%lu bytes available on "
+			"client socket", connection.bytesReady());
 
 	if (connection.state == READING_HEADER)
 		process_next_header(connection);
