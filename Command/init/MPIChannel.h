@@ -169,6 +169,10 @@ public:
 	void releaseChannel(size_t connectionID,
 		const MPIChannel& channel)
 	{
+		if (opt::verbose >= 3) {
+			log_f(connectionID, "releasing MPI Channel %s",
+				channel.str().c_str());
+		}
 		ChannelMap::iterator it = m_channelMap.find(channel);
 		assert(it != m_channelMap.end());
 		ConnectionQueue& q = it->second;
