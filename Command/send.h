@@ -55,6 +55,9 @@ send_write_handler(struct bufferevent* bev, void* arg)
 	const int READ_SIZE = 32768;
 	char buffer[READ_SIZE];
 
+	if (opt::verbose >= 3)
+		fprintf(stderr, "daemon socket ready for writing\n");
+
 	int n = fread(buffer, 1, READ_SIZE, file);
 
 	if (n < 0) {
@@ -64,8 +67,13 @@ send_write_handler(struct bufferevent* bev, void* arg)
 		exit(EXIT_FAILURE);
 	}
 
-	if (n > 0)
+	if (n > 0) {
+		if (opt::verbose >= 3) {
+			fprintf(stderr, "read %d bytes from input\n", n);
+			fprintf(stderr, "writing %d bytes to daemon socket\n", n);
+		}
 		evbuffer_add(output, buffer, n);
+	}
 
 	// EOF
 	if (n == 0) {
@@ -90,7 +98,7 @@ int cmd_send(int argc, char** argv)
 			std::cout << SEND_USAGE_MESSAGE;
 			return EXIT_SUCCESS;
 		  case 'v':
-			arg >> opt::verbose;
+			opt::verbose++;
 			break;
 		}
 		if (optarg != NULL && (!arg.eof() || arg.fail())) {
@@ -113,13 +121,10 @@ int cmd_send(int argc, char** argv)
 		die(SEND_USAGE_MESSAGE);
 
 	if (opt::verbose)
-		std::cerr << "Connecting to 'mpih init' process..."
+		std::cerr << "connecting to daemon..."
 			<< std::endl;
 
 	int socket = UnixSocket::connect(opt::socketPath.c_str());
-
-	if (opt::verbose)
-		std::cerr << "Connected." << std::endl;
 
 	std::vector<FILE *> input_files;
 
