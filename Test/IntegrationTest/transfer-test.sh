@@ -33,6 +33,8 @@ size=$1; shift
 # run test
 #------------------------------------------------------------
 
+echo "rank $MPIH_RANK log: $MPIH_LOG"
+
 data_file=random.bin
 if [ $MPIH_RANK -eq 0 ]; then
 	dd if=/dev/urandom count=1 bs=$size > $data_file 2>/dev/null

@@ -1,6 +1,8 @@
 #!/bin/bash
 set -eu -o pipefail
 
+echo "rank $MPIH_RANK log: $MPIH_LOG"
+
 # send 'hello' messages in a ring
 dest_rank=$((($MPIH_RANK + 1) % $MPIH_SIZE))
 src_rank=$(($MPIH_RANK - 1))
