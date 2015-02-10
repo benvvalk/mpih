@@ -50,13 +50,15 @@ static const char RUN_USAGE_MESSAGE[] =
 "\n"
 "Options:\n"
 "\n"
-"   -v,--verbose    show progress messages\n";
+"   -l,--log PATH     log file for daemon\n"
+"   -v,--verbose      show progress messages\n";
 
-static const char run_shortopts[] = "hv";
+static const char run_shortopts[] = "hl:v";
 
 static const struct option run_longopts[] = {
-	{ "help",     no_argument, NULL, 'h' },
-	{ "verbose",  no_argument, NULL, 'v' },
+	{ "help", no_argument, NULL, 'h' },
+	{ "log", required_argument, NULL, 'l' },
+	{ "verbose", no_argument, NULL, 'v' },
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -72,6 +74,9 @@ static inline int cmd_run(int argc, char** argv)
 		  case 'h':
 			std::cout << RUN_USAGE_MESSAGE;
 			return EXIT_SUCCESS;
+		  case 'l':
+			arg >> opt::logPath;
+			break;
 		  case 'v':
 			opt::verbose++;
 			break;
@@ -108,9 +113,11 @@ static inline int cmd_run(int argc, char** argv)
 	pidStr.append(opt::pidPath);
 
 	/* set log path for 'mpih init' daemon */
-	opt::logPath.append(tmpdir);
-	opt::logPath.append("/");
-	opt::logPath.append("log");
+	if (opt::logPath.empty()) {
+		opt::logPath.append(tmpdir);
+		opt::logPath.append("/");
+		opt::logPath.append("log");
+	}
 	std::string logStr("MPIH_LOG=");
 	logStr.append(opt::logPath);
 
