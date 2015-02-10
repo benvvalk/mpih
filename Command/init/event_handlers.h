@@ -63,7 +63,7 @@ process_next_header(Connection& connection)
 		exit(EXIT_FAILURE);
 	}
 
-	if (opt::verbose >= 2)
+	if (opt::verbose)
 		log_f(connection.id(), "received header line '%s'", header);
 
 	std::stringstream ss(header);
@@ -228,7 +228,8 @@ init_event_handler(struct bufferevent *bev, short error, void *arg)
 	}
 
 	if (!connection.mpi_ops_pending()) {
-		log_f(connection.id(), "closing connection from event handler");
+		if (opt::verbose >= 3)
+			log_f(connection.id(), "closing connection from event handler");
 		close_connection(connection);
 	}
 }

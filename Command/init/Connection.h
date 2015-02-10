@@ -312,7 +312,7 @@ struct Connection {
 			return;
 		}
 
-		if (opt::verbose >= 2)
+		if (opt::verbose)
 			log_f(connection_id, "pending MPI transfers complete. "
 					"Shutting down!");
 
@@ -366,7 +366,7 @@ struct Connection {
 
 		assert(completed);
 		bytes_transferred += chunk_size;
-		if (opt::verbose >= 2)
+		if (opt::verbose)
 			log_f(connection_id, "sent %lu bytes to rank %d so far",
 				bytes_transferred, rank);
 		clear_mpi_state();
@@ -398,7 +398,8 @@ struct Connection {
 					bytes_transferred, rank);
 		}
 		if (completed) {
-			log_f(connection_id, "closing connection from mpi handler");
+			if (opt::verbose >= 3)
+				log_f(connection_id, "closing connection from mpi handler");
 			close_connection(*this);
 		} else {
 			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
@@ -429,7 +430,7 @@ struct Connection {
 			MPI_Get_count(&status, MPI_INT, &count);
 			assert(count == 1);
 			if (chunk_size == 0) {
-				if (opt::verbose >= 3)
+				if (opt::verbose)
 					log_f(connection_id, "received EOF from rank %d", rank);
 				state = FLUSHING_SOCKET;
 				if (bytesQueued() == 0)
@@ -469,7 +470,7 @@ struct Connection {
 			MPI_Get_count(&status, MPI_BYTE, &count);
 			assert(count == chunk_size);
 			bytes_transferred += chunk_size;
-			if (opt::verbose >= 3) {
+			if (opt::verbose) {
 				log_f(connection_id, "received %lu bytes from rank %d so far",
 					bytes_transferred, rank);
 			}

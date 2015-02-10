@@ -32,6 +32,13 @@ static inline void mpi_send_chunk_size(Connection& connection)
 
 	uint64_t chunk_size = evbuffer_get_length(input);
 	if (connection.eof && chunk_size == 0) {
+		if (opt::verbose) {
+			log_f(connection.id(), "send to rank %d complete "
+				"(%lu bytes)", connection.rank,
+				connection.bytes_transferred);
+			log_f(connection.id(), "sending EOF to rank %d",
+				connection.rank);
+		}
 		connection.state = MPI_SENDING_EOF;
 	} else {
 		assert(chunk_size > 0);
@@ -146,8 +153,9 @@ static inline void update_mpi_status(
 	assert(arg != NULL);
 	Connection& connection = *(Connection*)arg;
 
-	log_f(connection.id(), "entering update_mpi_status with state %s",
-		connection.getState().c_str());
+	if (opt::verbose >= 3)
+		log_f(connection.id(), "entering update_mpi_status with state %s",
+			connection.getState().c_str());
 
 	if (connection.state == WAITING_FOR_MPI_CHANNEL) {
 		connection.update_mpi_channel_state();
