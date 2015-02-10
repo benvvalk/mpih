@@ -12,6 +12,9 @@
 #include <event2/buffer.h>
 #include <event2/bufferevent.h>
 
+/** polling interval for status of MPI send/recv */
+static const int MPI_POLL_INTERVAL = 200;
+
 // forward declarations
 class Connection;
 static inline void update_mpi_status(
@@ -275,7 +278,7 @@ struct Connection {
 		ChannelRequestResult result = manager.requestChannel(
 			connection_id, channel);
 		if (result == QUEUED) {
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 			return;
 		}
 		assert(result == GRANTED);
@@ -305,7 +308,7 @@ struct Connection {
 			if (opt::verbose >= 3)
 				log_f(connection_id, "waiting for pending MPI "
 						"transfers to complete");
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 			return;
 		}
 
@@ -334,7 +337,7 @@ struct Connection {
 		}
 
 		if (!completed) {
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 			return;
 		}
 
@@ -357,7 +360,7 @@ struct Connection {
 		}
 
 		if (!completed) {
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 			return;
 		}
 
@@ -398,7 +401,7 @@ struct Connection {
 			log_f(connection_id, "closing connection from mpi handler");
 			close_connection(*this);
 		} else {
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 		}
 	}
 
@@ -443,7 +446,7 @@ struct Connection {
 		}
 
 		if (!completed)
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 	}
 
 	/** Callback to update state when receiving data chunk */
@@ -481,7 +484,7 @@ struct Connection {
 			mpi_recv_chunk_size(*this);
 		}
 		if (!completed)
-			schedule_event(update_mpi_status, 1000);
+			schedule_event(update_mpi_status, MPI_POLL_INTERVAL);
 	}
 
 private:
