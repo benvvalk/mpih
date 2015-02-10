@@ -24,6 +24,10 @@ SET(CMAKE_CXX_COMPILER mpicxx)
 
 find_package(Event)
 
+# Google PerfTools (optional)
+
+find_package(Gperftools)
+
 #------------------------------------------------------------
 # compiler settings
 #------------------------------------------------------------
@@ -53,6 +57,10 @@ configure_file(
 
 add_executable (mpih mpih.cc)
 target_link_libraries(mpih "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
+
+if(GPERFTOOLS_FOUND)
+	target_link_libraries(mpih "${GPERFTOOLS_LIBRARIES}")
+endif()
 
 #------------------------------------------------------------
 # tests
