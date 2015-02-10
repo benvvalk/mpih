@@ -51,14 +51,20 @@ static const char RUN_USAGE_MESSAGE[] =
 "Options:\n"
 "\n"
 "   -l,--log PATH     log file for daemon\n"
-"   -v,--verbose      show progress messages\n";
+"   -v,--verbose      show progress messages\n"
+"   -V,--log-verbose  verbose level for daemon log\n";
 
-static const char run_shortopts[] = "hl:v";
+namespace opt {
+	static int logVerbose = 1;
+}
+
+static const char run_shortopts[] = "hl:vV";
 
 static const struct option run_longopts[] = {
 	{ "help", no_argument, NULL, 'h' },
 	{ "log", required_argument, NULL, 'l' },
 	{ "verbose", no_argument, NULL, 'v' },
+	{ "log-verbose", no_argument, NULL, 'V' },
 	{ NULL, 0, NULL, 0 }
 };
 
@@ -79,6 +85,9 @@ static inline int cmd_run(int argc, char** argv)
 			break;
 		  case 'v':
 			opt::verbose++;
+			break;
+		  case 'V':
+			opt::logVerbose++;
 			break;
 		}
 		if (optarg != NULL && (!arg.eof() || arg.fail())) {
@@ -137,8 +146,8 @@ static inline int cmd_run(int argc, char** argv)
 	}
 
 	if (pid == 0) {
-		/* turn on verbose logging for daemon */
-		opt::verbose = 3;
+		/* set verbose level for daemon log */
+		opt::verbose = opt::logVerbose;
 		/* invoke 'mpih init' with no args */
 		char* empty_argv[1] = { NULL };
 		cmd_init(0, empty_argv);
