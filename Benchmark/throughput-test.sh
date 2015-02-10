@@ -32,6 +32,8 @@ throughput() {
 		awk '{running_avg=$6} END {print running_avg}'
 }
 
+echo "rank $MPIH_RANK log: $MPIH_LOG"
+
 if [ $MPIH_RANK -eq 0 ]; then
 	test_data | mpih send 1
 else
