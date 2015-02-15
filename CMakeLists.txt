@@ -55,7 +55,32 @@ configure_file(
 # main executable
 #------------------------------------------------------------
 
-add_executable (mpih mpih.cc)
+set(SOURCE_FILES
+Command/client/event_handlers.h
+Command/commands.h
+Command/finalize.h
+Command/help.h
+Command/init/Connection.h
+Command/init/event_handlers.h
+Command/init.h
+Command/init/log.h
+Command/init/MPIChannel.h
+Command/init/mpi.h
+Command/rank.h
+Command/recv.h
+Command/run.h
+Command/send.h
+Command/size.h
+Command/version.h
+Env/env.h
+IO/IOUtil.h
+IO/SocketUtil.h
+Macro/Array.h
+mpih.cc
+Options/CommonOptions.h
+Options/CommonOptions.cc
+)
+add_executable (mpih ${SOURCE_FILES})
 target_link_libraries(mpih "${MPI_C_LIBRARIES}" "${EVENT_LIBRARIES}")
 
 if(GPERFTOOLS_FOUND)
