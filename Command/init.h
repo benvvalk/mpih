@@ -57,7 +57,7 @@ namespace opt {
 	static std::string pidPath;
 }
 
-static const char init_shortopts[] = "fhlp::v";
+static const char init_shortopts[] = "fhl:p:v";
 
 static const struct option init_longopts[] = {
 	{ "foreground", no_argument, NULL, 'f' },
