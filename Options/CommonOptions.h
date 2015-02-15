@@ -5,15 +5,15 @@
 
 namespace opt {
 	/** -h,--help: show info on command usage */
-	int help = 0;
+	extern int help;
 	/**
 	 * -s,--socket: Unix socket for communication
 	 * between 'init' daemon and client commands
 	 * (e.g. 'mpi send').
 	 */
-	std::string socketPath;
+	extern std::string socketPath;
 	/** --verbose: verbose output on stderr */
-	int verbose = 0;
+	extern int verbose;
 }
 
 #endif
